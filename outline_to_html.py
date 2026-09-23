@@ -113,15 +113,19 @@ def render_node(node) -> str:
     grip = '<span class="grip" draggable="true" title="drag to move">⋮⋮</span>'
     span = (
         f'{chip}<span class="txt {cls}" '
-        f'data-raw="{html.escape(node["raw"], quote=True)}">{text}</span>'
+        f'data-raw="{html.escape(node["raw"], quote=True)}">{text}</span></div>'
+        f'<span class="act"><button class="del" type="button" title="delete bullet" aria-label="delete bullet"></button></span>'
     )
     if node["children"]:
         kids = "\n".join(render_node(c) for c in node["children"])
         return (
-            f'<li class="branch open"><div class="{row_cls}">{grip}<button class="caret" '
+            f'<li class="branch open"><div class="{row_cls}"><div class="main">{grip}<button class="caret" '
             f'aria-label="toggle"></button>{span}</div><ul>{kids}</ul></li>'
         )
-    return f'<li class="leaf"><div class="{row_cls}">{grip}<span class="dot"></span>{span}</div></li>'
+    return (
+        f'<li class="leaf"><div class="{row_cls}"><div class="main">{grip}<span class="dot"></span>'
+        f'{span}</div></li>'
+    )
 
 
 PAGE = """<!DOCTYPE html>
@@ -131,67 +135,160 @@ PAGE = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title}</title>
 <style>
-  :root {{ --line:#d8d3c8; --ink:#2b2a27; --mut:#8a8578; --acc:#7a5c2e; --bg:#faf8f4; }}
+  :root {{
+    color-scheme: light dark;
+    --serif: Charter, 'Iowan Old Style', 'Source Serif Pro', 'Palatino Linotype', Georgia, 'Times New Roman', serif;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif;
+    --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    --bg:#faf8f3; --ink:#1f1d1a; --mut:#6e6960; --acc:#7a5c2e; --line:#ddd7cb;
+    --hover:#f2eee5; --chip:#e9e2d3; --codebg:#eee9dd; --editbg:#fffdf6; --btn:#fffefb;
+    --sel:#e9dcc2; --ok:#3d7a3d; --err:#a33b2e;
+  }}
+  @media (prefers-color-scheme: dark) {{
+    :root {{
+      --bg:#1c1b19; --ink:#e7e2d8; --mut:#9d968a; --acc:#d2ab6a; --line:#37342f;
+      --hover:#26241f; --chip:#33302a; --codebg:#2b2925; --editbg:#232119; --btn:#26241f;
+      --sel:#4a3f2a; --ok:#8fc48f; --err:#e08b7d;
+    }}
+  }}
+  html {{ -webkit-text-size-adjust:100%; }}
   body {{ margin:0; background:var(--bg); color:var(--ink);
-         font:15px/1.55 Georgia, 'Times New Roman', serif; }}
-  header {{ position:sticky; top:0; background:var(--bg); border-bottom:1px solid var(--line);
-            padding:10px 24px; display:flex; gap:12px; align-items:baseline; z-index:2; }}
-  header h1 {{ font-size:15px; margin:0; font-weight:600; }}
-  header .src {{ color:var(--mut); font-size:12px; }}
-  header .hint {{ color:var(--mut); font-size:12px; font-style:italic; }}
-  header button {{ font:12px/1 -apple-system, sans-serif; padding:4px 10px; cursor:pointer;
-                   background:#fff; border:1px solid var(--line); border-radius:4px; }}
-  #saveBtn {{ margin-left:auto; padding:5px 16px; font-weight:600; }}
+         font:17px/1.65 var(--serif);
+         text-rendering:optimizeLegibility; font-kerning:normal;
+         font-variant-ligatures:common-ligatures; }}
+  ::selection {{ background:var(--sel); }}
+
+  /* ---------- header chrome (UI face, not reading face) ---------- */
+  header {{ position:sticky; top:0; z-index:2; background:var(--bg);
+           border-bottom:1px solid var(--line); padding:10px 24px;
+           display:flex; flex-wrap:wrap; gap:8px 12px; align-items:baseline;
+           font:13px/1.4 var(--sans); }}
+  header h1 {{ font:600 15px/1.4 var(--serif); margin:0; letter-spacing:-0.005em; }}
+  header .src {{ color:var(--mut); font-size:12.5px; }}
+  header .hint {{ color:var(--mut); font-size:12.5px; font-style:italic; }}
+  header button {{ font:500 12.5px/1 var(--sans); padding:6px 11px; cursor:pointer;
+                  color:var(--ink); background:var(--btn); border:1px solid var(--line);
+                  border-radius:6px; }}
+  header button:hover {{ border-color:var(--mut); }}
+  header button:focus-visible {{ outline:2px solid var(--acc); outline-offset:2px; }}
+  #saveBtn {{ margin-left:auto; padding:6px 16px; font-weight:600; }}
   #saveBtn:disabled {{ opacity:.45; cursor:default; }}
-  #saveBtn.dirty {{ background:var(--acc); color:#fff; border-color:var(--acc); }}
+  #saveBtn.dirty {{ background:var(--acc); color:var(--bg); border-color:var(--acc); }}
   body.readonly #saveBtn, body.readonly #mdBtn {{ display:none; }}
-  #status {{ font:12px -apple-system, sans-serif; color:var(--mut); min-width:60px; }}
-  #status.saved {{ color:#3d7a3d; }}
-  #status.error {{ color:#a33; }}
-  main {{ max-width:960px; margin:0 auto; padding:18px 24px 80px; }}
+  #status {{ font:12.5px var(--sans); color:var(--mut); min-width:60px; }}
+  #status.saved {{ color:var(--ok); }}
+  #status.error {{ color:var(--err); }}
+
+  /* ---------- reading column ---------- */
+  main {{ max-width:780px; margin:0 auto; padding:28px 24px 140px; }}
   #mdview {{ display:none; width:100%; min-height:calc(100vh - 140px); box-sizing:border-box;
-             font:13px/1.6 ui-monospace, Menlo, monospace; color:var(--ink);
-             background:#fffdf8; border:1px solid var(--line); border-radius:6px;
-             padding:14px 16px; resize:vertical; white-space:pre; overflow-x:auto; }}
+            font:14.5px/1.7 var(--mono); color:var(--ink); tab-size:2;
+            background:var(--editbg); border:1px solid var(--line); border-radius:8px;
+            padding:20px 24px; resize:vertical; white-space:pre-wrap; overflow-wrap:break-word; }}
+  #mdview:focus {{ outline:2px solid var(--acc); outline-offset:-1px; }}
   body.mdmode #tree {{ display:none; }}
   body.mdmode #mdview {{ display:block; }}
-  ul {{ list-style:none; margin:0; padding:0 0 0 22px; border-left:1px solid var(--line); }}
+
+  ul {{ list-style:none; margin:0; padding:0 0 0 26px; border-left:1px solid var(--line); }}
   main > ul {{ border-left:none; padding-left:0; }}
-  li {{ margin:2px 0; }}
+  li {{ margin:0; }}
+  /* a row is two boxes: .main (grip, caret/dot, chip, text) and .act (the
+     delete controls). They highlight separately, with a gap between them,
+     and .act keeps a fixed width so the text column never reflows. */
   .row {{ display:flex; align-items:baseline; gap:6px; }}
-  .caret {{ flex:0 0 auto; width:18px; height:18px; border:none; background:none; cursor:pointer;
-            position:relative; top:2px; padding:0; }}
-  .caret::before {{ content:''; display:block; margin:4px auto; width:0; height:0;
-                    border-left:6px solid var(--acc); border-top:5px solid transparent;
-                    border-bottom:5px solid transparent; transition:transform .12s; }}
+  .main {{ flex:1 1 auto; min-width:0; display:flex; align-items:baseline; gap:8px;
+           padding:5px 8px 5px 0; border-radius:6px; }}
+  .row:hover > .main {{ background:var(--hover); }}
+
+  /* breathing room above section headings */
+  li:has(> .row > .main > .txt.h1) {{ margin-top:8px; }}
+  li:has(> .row > .main > .txt.h2) {{ margin-top:26px; }}
+  li:has(> .row > .main > .txt.h3) {{ margin-top:16px; }}
+  main > ul > li:first-child {{ margin-top:0; }}
+
+  /* caret & dot get a real baseline via inline-block pseudo, so they
+     centre on the x-height of whatever size text sits beside them */
+  .caret {{ flex:0 0 auto; width:20px; border:none; background:none; cursor:pointer;
+           padding:0; margin:0; font:inherit; line-height:inherit; color:inherit;
+           text-align:center; border-radius:4px; }}
+  .caret::before {{ content:''; display:inline-block; width:0; height:0; vertical-align:middle;
+                   border-left:7px solid var(--acc); border-top:5px solid transparent;
+                   border-bottom:5px solid transparent; transition:transform .12s; }}
+  .caret:hover::before {{ border-left-color:var(--ink); }}
+  .caret:focus-visible {{ outline:2px solid var(--acc); outline-offset:-2px; }}
   li.branch.open > .row .caret::before {{ transform:rotate(90deg); }}
   li.branch:not(.open) > ul {{ display:none; }}
-  .dot {{ flex:0 0 auto; width:18px; text-align:center; color:var(--mut); }}
-  .dot::before {{ content:'·'; }}
-  .row.numbered > .dot {{ display:none; }}
-  .h1 {{ font-size:19px; font-weight:700; }}
-  .h2 {{ font-size:16px; font-weight:700; }}
-  .h3 {{ font-size:15px; font-weight:600; font-style:italic; }}
+  .dot {{ flex:0 0 auto; width:20px; text-align:center; }}
+  .dot::before {{ content:''; display:inline-block; width:5px; height:5px; border-radius:50%;
+                 background:var(--mut); opacity:.75; vertical-align:middle;
+                 position:relative; top:-1px; }}
+  .row.numbered > .main > .dot {{ display:none; }}
+
+  /* text */
+  .txt {{ flex:1 1 auto; min-width:0; overflow-wrap:break-word;
+         text-wrap:pretty; hanging-punctuation:first; }}
+  .h1 {{ font-size:26px; line-height:1.25; font-weight:700; letter-spacing:-0.015em; text-wrap:balance; }}
+  .h2 {{ font-size:20px; line-height:1.3; font-weight:700; letter-spacing:-0.01em; text-wrap:balance; }}
+  .h3 {{ font-size:17.5px; line-height:1.4; font-weight:600; font-style:italic; text-wrap:balance; }}
+  strong {{ font-weight:700; }}
   .pnum {{ flex:0 0 auto; min-width:14px; text-align:center; color:var(--mut);
-           font:10.5px/1.6 -apple-system, sans-serif; background:#efe9dd;
-           border-radius:8px; padding:0 5px; white-space:nowrap;
-           position:relative; top:-1px; }}
+          font:600 11.5px/1 var(--sans); font-variant-numeric:tabular-nums;
+          background:var(--chip); border-radius:999px; padding:3px 7px; white-space:nowrap;
+          position:relative; top:-2px; }}
   .tag {{ color:var(--mut); font-style:italic; }}
-  code {{ font:13px ui-monospace, monospace; background:#f0ece3; padding:0 3px; border-radius:3px; }}
-  .row:hover {{ background:#f3efe7; border-radius:3px; }}
-  .txt.editing {{ background:#fffdf4; outline:1px solid var(--acc); border-radius:3px;
-                  padding:0 3px; cursor:text; }}
+  code {{ font:0.88em var(--mono); background:var(--codebg); padding:1px 5px; border-radius:4px; }}
+  .txt.editing {{ background:var(--editbg); outline:1.5px solid var(--acc); border-radius:4px;
+                 padding:0 4px; margin:0 -4px; cursor:text; caret-color:var(--acc); }}
+
+  /* delete: a fixed-width action slot sits at the row's right edge on every
+     row, so revealing controls never changes the text column's width. On
+     hover the slot shows a trash; clicking it swaps in a check (delete) and
+     a cross (cancel) in the same slot. */
+  .act {{ flex:0 0 52px; display:flex; justify-content:flex-end; gap:4px;
+          padding:5px 2px; border-radius:6px; }}
+  .row:hover > .act, .row.confirming > .act {{ background:var(--hover); }}
+  .act button {{ flex:0 0 auto; width:24px; border:none; background:none; cursor:pointer;
+                 padding:0; margin:0; font:inherit; line-height:inherit; text-align:center;
+                 border-radius:4px; color:var(--mut); }}
+  .act button::before {{ content:''; display:inline-block; width:15px; height:15px;
+                         vertical-align:middle; position:relative; top:-1px;
+                         background:currentColor;
+                         -webkit-mask:var(--icon) center/contain no-repeat;
+                         mask:var(--icon) center/contain no-repeat; }}
+  .act button:hover {{ background:var(--chip); }}
+  .act button:focus-visible {{ outline:2px solid var(--acc); outline-offset:-2px; }}
+  .del {{ opacity:0; transition:opacity .1s; }}
+  .del::before {{ --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6'/%3E%3C/svg%3E"); }}
+  .row:hover > .act > .del, .del:focus-visible {{ opacity:1; }}
+  .del:hover {{ color:var(--err); }}
+  .row.confirming > .act > .del {{ display:none; }}
+  .ok {{ color:var(--err); }}
+  .ok::before {{ --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E"); }}
+  .no::before {{ --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 6L6 18M6 6l12 12'/%3E%3C/svg%3E"); }}
+  body.readonly .act {{ display:none; }}
+
+  /* drag handle & drop indicators */
   .grip {{ flex:0 0 auto; width:20px; margin-left:-24px; opacity:0; cursor:grab;
-           color:var(--acc); font:15px/1.35 sans-serif; font-weight:700;
-           letter-spacing:-2px; user-select:none; text-align:center;
-           border-radius:4px; transition:opacity .1s; }}
-  .row:hover > .grip {{ opacity:1; }}
-  .grip:hover {{ background:#ece3d0; }}
+          color:var(--acc); font:700 15px/1.35 var(--sans);
+          letter-spacing:-2px; user-select:none; text-align:center;
+          border-radius:4px; transition:opacity .1s; }}
+  .row:hover .grip {{ opacity:1; }}
+  .grip:hover {{ background:var(--chip); }}
   .grip:active {{ cursor:grabbing; }}
   body.readonly .grip {{ display:none; }}
   li.dragging {{ opacity:.35; }}
-  .row.drop-before {{ box-shadow:0 -2px 0 var(--acc); }}
-  .row.drop-after {{ box-shadow:0 2px 0 var(--acc); }}
+  .row.drop-before > .main {{ box-shadow:0 -2px 0 var(--acc); }}
+  .row.drop-after > .main {{ box-shadow:0 2px 0 var(--acc); }}
+
+  @media (max-width: 640px) {{
+    body {{ font-size:16px; }}
+    header {{ padding:8px 14px; }}
+    header .hint {{ display:none; }}
+    main {{ padding:18px 14px 100px; }}
+    ul {{ padding-left:18px; }}
+    .h1 {{ font-size:23px; }}
+    .h2 {{ font-size:19px; }}
+  }}
 </style>
 </head>
 <body class="{bodycls}">
@@ -221,9 +318,11 @@ PAGE = """<!DOCTYPE html>
   function setAll(open) {{
     document.querySelectorAll('li.branch').forEach(li => li.classList.toggle('open', open));
   }}
+  let flashTimer = null;
   function flash(msg, cls) {{
     status.textContent = msg; status.className = cls || '';
-    if (msg) setTimeout(() => {{ status.textContent = ''; status.className = ''; }}, 2500);
+    clearTimeout(flashTimer);
+    if (msg) flashTimer = setTimeout(() => {{ status.textContent = ''; status.className = ''; }}, 2500);
   }}
   let dirty = false;
   function markDirty() {{
@@ -275,6 +374,7 @@ PAGE = """<!DOCTYPE html>
     return bullets;
   }}
   function buildTree(bullets) {{
+    undoStack.length = redoStack.length = 0;   // positions no longer valid
     const root = {{ indent: -1, children: [] }};
     const stack = [root];
     bullets.forEach(b => {{
@@ -286,13 +386,14 @@ PAGE = """<!DOCTYPE html>
     function renderNode(n) {{
       const d = renderMd(n.raw);
       const grip = '<span class="grip" draggable="true" title="drag to move">⋮⋮</span>';
-      const span = '<span class="txt ' + d.cls + '" data-raw="' + esc(n.raw) + '">' + d.html + '</span>';
+      const span = '<span class="txt ' + d.cls + '" data-raw="' + esc(n.raw) + '">' + d.html + '</span></div>' +
+                   '<span class="act"><button class="del" type="button" title="delete bullet" aria-label="delete bullet"></button></span>';
       if (n.children.length) {{
-        return '<li class="branch open"><div class="row">' + grip +
+        return '<li class="branch open"><div class="row"><div class="main">' + grip +
                '<button class="caret" aria-label="toggle"></button>' + span + '</div><ul>' +
                n.children.map(renderNode).join('') + '</ul></li>';
       }}
-      return '<li class="leaf"><div class="row">' + grip + '<span class="dot"></span>' +
+      return '<li class="leaf"><div class="row"><div class="main">' + grip + '<span class="dot"></span>' +
              span + '</div></li>';
     }}
     tree.innerHTML = root.children.map(renderNode).join('');
@@ -332,13 +433,25 @@ PAGE = """<!DOCTYPE html>
     }})(tree, true);
   }}
 
-  // depth rule: nothing may nest under a non-heading bullet — paragraphs are
-  // the deepest level an operation may create
-  function depthOk(parentUl) {{
-    if (parentUl === tree) return true;
-    const pli = parentUl.closest('li');
-    const pspan = pli && pli.querySelector(':scope > .row .txt');
-    return !!(pspan && pspan.dataset.raw.startsWith('#'));
+  // nesting rules — returns an error message, or null when `li` may become a
+  // child of `parentLi` (null = root level):
+  //   * nothing may nest under a non-heading bullet — paragraphs are the
+  //     deepest level an operation may create
+  //   * a heading may only nest under a heading of a shallower level
+  //     (## under #, ### under ##, never # under ## or ## under ##)
+  const headingLevel = li => {{
+    const span = li && li.querySelector(':scope > .row .txt');
+    const m = span && /^(#{{1,6}})\\s/.exec(span.dataset.raw);
+    return m ? m[1].length : 0;
+  }};
+  const parentLiOf = li => li.parentElement === tree ? null : li.parentElement.closest('li');
+  function nestError(li, parentLi) {{
+    if (!parentLi) return null;
+    const plvl = headingLevel(parentLi);
+    if (!plvl) return 'no indentation beyond paragraph level';
+    const lvl = headingLevel(li);
+    if (lvl && lvl <= plvl) return 'a heading can only go under a shallower heading';
+    return null;
   }}
 
   // ---- branch/leaf conversion helpers (for indent/outdent) ----
@@ -366,6 +479,51 @@ PAGE = """<!DOCTYPE html>
     }}
   }}
 
+  // ---- history: Cmd/Ctrl+Z undoes the last move or delete, +Shift redoes ----
+  // a position is {{parent: li|null, next: li|null}}; null parent = root level;
+  // a null position means "not in the tree" (deleted)
+  const posOf = li => ({{
+    parent: li.parentElement === tree ? null : li.parentElement.closest('li'),
+    next: li.nextElementSibling }});
+  function placeAt(li, pos) {{
+    const from = li.parentElement ? parentLiOf(li) : null;
+    if (!pos) {{                                   // (re)delete
+      li.remove();
+      if (from) toLeafIfEmpty(from);
+      renumberChips(); markDirty(); return;
+    }}
+    let ul = tree;
+    if (pos.parent) {{ toBranch(pos.parent); ul = pos.parent.querySelector(':scope > ul'); }}
+    if (pos.next && pos.next.parentElement === ul) ul.insertBefore(li, pos.next);
+    else ul.appendChild(li);
+    if (from && from !== pos.parent) toLeafIfEmpty(from);
+    renumberChips(); markDirty();
+  }}
+  const undoStack = [], redoStack = [];
+  function recordMove(li, before) {{ recordChange(li, before, posOf(li), 'move'); }}
+  function recordChange(li, before, after, what) {{
+    undoStack.push({{ li, before, after, what }});
+    redoStack.length = 0;
+  }}
+  function undoMove() {{
+    const m = undoStack.pop();
+    if (!m) {{ flash('nothing to undo'); return; }}
+    placeAt(m.li, m.before); redoStack.push(m); flash(m.what + ' undone');
+  }}
+  function redoMove() {{
+    const m = redoStack.pop();
+    if (!m) {{ flash('nothing to redo'); return; }}
+    placeAt(m.li, m.after); undoStack.push(m); flash(m.what + ' redone');
+  }}
+  document.addEventListener('keydown', e => {{
+    if (!EDITABLE || !(e.metaKey || e.ctrlKey) || e.altKey || e.key.toLowerCase() !== 'z') return;
+    const a = document.activeElement;
+    if (a && (a.isContentEditable || a === mdview)) return;   // native text undo applies
+    if (document.body.classList.contains('mdmode')) return;
+    e.preventDefault();
+    if (e.shiftKey) redoMove(); else undoMove();
+  }});
+
   // ---- markdown view toggle ----
   let mdBaseline = '';
   mdBtn.addEventListener('click', () => {{
@@ -390,10 +548,52 @@ PAGE = """<!DOCTYPE html>
   }});
   mdview.addEventListener('input', markDirty);
 
+  // ---- delete: trash -> check (delete) / cross (cancel) -> gone, undoable ----
+  function cancelConfirm() {{
+    tree.querySelectorAll('.row.confirming').forEach(r => {{
+      r.classList.remove('confirming');
+      r.querySelectorAll(':scope > .act > .ok, :scope > .act > .no').forEach(b => b.remove());
+    }});
+  }}
+  function iconButton(cls, label) {{
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = cls; b.title = label; b.setAttribute('aria-label', label);
+    return b;
+  }}
+  function askDelete(row) {{
+    cancelConfirm();
+    if (document.activeElement && document.activeElement.isContentEditable)
+      document.activeElement.blur();               // stage a pending inline edit first
+    row.classList.add('confirming');
+    const n = row.closest('li').querySelectorAll('.txt').length;
+    const ok = iconButton('ok', n > 1 ? 'delete ' + n + ' bullets' : 'delete bullet');
+    const no = iconButton('no', 'cancel');
+    row.querySelector(':scope > .act').prepend(ok, no);
+    ok.focus();
+  }}
+  function doDelete(li) {{
+    cancelConfirm();
+    const before = posOf(li), from = parentLiOf(li);
+    li.remove();
+    if (from) toLeafIfEmpty(from);
+    recordChange(li, before, null, 'delete');
+    renumberChips(); markDirty();
+    flash('deleted · ⌘Z to undo');
+  }}
+  document.addEventListener('click', e => {{
+    if (!e.target.closest('.act')) cancelConfirm();
+  }});
+  document.addEventListener('keydown', e => {{ if (e.key === 'Escape') cancelConfirm(); }});
+
   // ---- delegated events (survive tree rebuilds) ----
   tree.addEventListener('click', e => {{
     const caret = e.target.closest('.caret');
     if (caret) {{ caret.closest('li').classList.toggle('open'); return; }}
+    const del = e.target.closest('.del');
+    if (del) {{ if (EDITABLE) askDelete(del.closest('.row')); return; }}
+    const ok = e.target.closest('.ok');
+    if (ok) {{ doDelete(ok.closest('li')); return; }}
+    if (e.target.closest('.no')) {{ cancelConfirm(); return; }}
     const span = e.target.closest('span.txt');
     if (span) startEdit(span, e);
   }});
@@ -432,15 +632,14 @@ PAGE = """<!DOCTYPE html>
       const li = span.closest('li');
       const sel = getSelection();
       const off = sel.rangeCount ? sel.getRangeAt(0).startOffset : span.textContent.length;
+      const before = posOf(li);
       suppressBlur = true;
       let moved = false;
       if (!out) {{
         const prevLi = li.previousElementSibling;
-        const prevSpan = prevLi && prevLi.querySelector(':scope > .row .txt');
+        const err = prevLi && nestError(li, prevLi);
         if (!prevLi) {{ flash('cannot indent further', 'error'); }}
-        else if (!prevSpan.dataset.raw.startsWith('#')) {{
-          flash('no indentation beyond paragraph level', 'error');
-        }}
+        else if (err) {{ flash(err, 'error'); }}
         else {{
           toBranch(prevLi);
           prevLi.querySelector(':scope > ul').appendChild(li);
@@ -456,7 +655,7 @@ PAGE = """<!DOCTYPE html>
           moved = true;
         }}
       }}
-      if (moved) {{ renumberChips(); markDirty(); }}
+      if (moved) {{ recordMove(li, before); renumberChips(); markDirty(); }}
       span.focus();
       if (span.firstChild) {{
         const r = document.createRange();
@@ -497,7 +696,7 @@ PAGE = """<!DOCTYPE html>
     if (!row || !dragLi) return;
     const li = row.closest('li');
     if (li === dragLi || dragLi.contains(li)) return;
-    if (!depthOk(li.parentElement)) return;   // would nest under a paragraph
+    if (nestError(dragLi, parentLiOf(li))) return;   // drop target breaks nesting rules
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     clearMarks();
@@ -509,11 +708,14 @@ PAGE = """<!DOCTYPE html>
     if (!row || !dragLi) return;
     const li = row.closest('li');
     if (li === dragLi || dragLi.contains(li)) return;
-    if (!depthOk(li.parentElement)) {{ flash('no indentation beyond paragraph level', 'error'); return; }}
+    const err = nestError(dragLi, parentLiOf(li));
+    if (err) {{ flash(err, 'error'); return; }}
     e.preventDefault();
     const where = row.classList.contains('drop-before') ? 'before' : 'after';
     clearMarks();
+    const before = posOf(dragLi);
     if (where === 'before') li.before(dragLi); else li.after(dragLi);
+    recordMove(dragLi, before);
     renumberChips();
     markDirty();
   }});
@@ -528,6 +730,7 @@ PAGE = """<!DOCTYPE html>
       if (document.activeElement && document.activeElement.isContentEditable)
         document.activeElement.blur();               // stage a pending inline edit first
       bullets = serialize();
+      if (!bullets.length) {{ flash('nothing to save — the outline is empty', 'error'); return; }}
     }}
     try {{
       const r = await fetch('/save', {{ method: 'POST',
@@ -562,7 +765,7 @@ def build_page(source: Path, editable: bool) -> str:
         editable="true" if editable else "false",
         bodycls="" if editable else "readonly",
         filehash=file_hash(text),
-        hint="click to edit · drag to move · Markdown for raw view · Save writes to the .md"
+        hint="click to edit · drag to move · trash to delete · ⌘Z undoes a move or delete · Markdown for raw view · Save writes to the .md"
         if editable else "",
     )
 

@@ -14,6 +14,8 @@ back to the `.md` only when you press **Save**.
 ## Features
 
 - **Collapsible tree** — carets on branch bullets, Expand-all / Collapse-all.
+- **Reading typography** — a book-like serif at a comfortable measure, with
+  a dark palette that follows the system colour scheme.
 - **Click to edit in place** — the bullet's raw markdown, same font and
   position as the rendered view. Enter or click away stages the edit; Esc
   cancels.
@@ -21,12 +23,20 @@ back to the `.md` only when you press **Save**.
   outdent to after the parent, subtree included, caret preserved.
 - **Drag to move** — a grip appears on hover; dragging moves the bullet with
   its whole subtree, with a drop indicator above/below the target.
+- **Delete** — a trash icon appears at the right of a bullet on hover; clicking
+  it swaps in a check and a cross. The check removes the bullet with its whole
+  subtree, the cross (or Esc) cancels.
+- **Undo / redo** — Cmd/Ctrl+Z reverses the last move (drag, Tab, Shift+Tab)
+  or delete; Cmd/Ctrl+Shift+Z redoes it. Text edits keep the browser's own
+  undo while editing.
 - **Automatic paragraph numbering** — bullets sitting directly under a heading
   bullet (and not themselves headings or `[bracketed placeholders]`) get a
   small sequential number chip. Numbers are **computed by the UI, never stored
   in the file**, and recompute live on every reorder.
-- **Depth cap** — nothing can be nested under a non-heading bullet via the
-  tree view; paragraphs are the deepest level an operation may create.
+- **Nesting rules** — nothing can be nested under a non-heading bullet via
+  the tree view (paragraphs are the deepest level an operation may create),
+  and a heading can only be moved under a heading of a shallower level, so a
+  `#` never lands beneath a `##` and a `##` never beneath another `##`.
 - **Markdown view** — a header toggle swaps the tree for a raw-markdown
   textarea of the current staged state: bulk-edit, add, delete, re-indent
   bullets, then toggle back or Save directly.
