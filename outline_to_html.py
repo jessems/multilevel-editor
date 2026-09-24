@@ -39,6 +39,16 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 BULLET_RE = re.compile(r"^(\s*)- (.*)$")
+# CREAC (Neumann's shorthand) role tag: a trailing ' {C}'/'{R}'/'{E}'/'{A}'
+# on the bullet's line — stored in the file, stripped from the rendered text,
+# shown as a one-letter badge before the paragraph number.
+CREAC_RE = re.compile(r"^(.*?)\s*\{([CREA])\}\s*$", re.S)
+CREAC_TITLES = {"C": "Conclusion", "R": "Rule", "E": "Explanation", "A": "Application"}
+
+
+def split_creac(raw: str):
+    m = CREAC_RE.match(raw)
+    return (m.group(1), m.group(2)) if m else (raw, None)
 
 
 def parse_outline(text: str):
@@ -106,10 +116,19 @@ def render_inline(text: str):
 
 
 def render_node(node) -> str:
-    text, heading = render_inline(node["raw"])
+    disp, letter = split_creac(node["raw"])
+    text, heading = render_inline(disp)
     cls = f"h{heading}" if heading else "item"
     numbered = bool(node.get("num"))
+    if letter:
+        badge = (f'<span class="creac l-{letter}" '
+                 f'title="{CREAC_TITLES[letter]} — click to cycle CREAC">{letter}</span>')
+    elif numbered:
+        badge = '<span class="creac empty" title="click to cycle CREAC"></span>'
+    else:
+        badge = ""
     chip = f'<span class="pnum">{node["num"]}</span>' if numbered else ""
+    chip = badge + chip
     row_cls = "row numbered" if numbered else "row"
     grip = '<span class="grip" draggable="true" title="drag to move">⋮⋮</span>'
     span = (
@@ -144,12 +163,14 @@ PAGE = """<!DOCTYPE html>
     --bg:#faf8f3; --ink:#1f1d1a; --mut:#6e6960; --acc:#7a5c2e; --line:#ddd7cb;
     --hover:#f2eee5; --chip:#e9e2d3; --codebg:#eee9dd; --editbg:#fffdf6; --btn:#fffefb;
     --sel:#e9dcc2; --ok:#3d7a3d; --err:#a33b2e;
+    --cC:#3f6e8e; --cR:#8a5a24; --cE:#3d7a3d; --cA:#8f4a8f;
   }}
   @media (prefers-color-scheme: dark) {{
     :root {{
       --bg:#1c1b19; --ink:#e7e2d8; --mut:#9d968a; --acc:#d2ab6a; --line:#37342f;
       --hover:#26241f; --chip:#33302a; --codebg:#2b2925; --editbg:#232119; --btn:#26241f;
       --sel:#4a3f2a; --ok:#8fc48f; --err:#e08b7d;
+      --cC:#82b6d6; --cR:#d2ab6a; --cE:#8fc48f; --cA:#d49bd4;
     }}
   }}
   html {{ -webkit-text-size-adjust:100%; }}
@@ -237,6 +258,23 @@ PAGE = """<!DOCTYPE html>
           background:var(--chip); border-radius:999px; padding:3px 7px; white-space:nowrap;
           position:relative; top:-2px; }}
   .tag {{ color:var(--mut); font-style:italic; }}
+  /* CREAC role badge — one letter, before the paragraph number; click cycles */
+  .creac {{ flex:0 0 auto; width:18px; height:18px; border-radius:50%; text-align:center;
+           font:700 10.5px/15px var(--sans); cursor:pointer; user-select:none;
+           border:1.5px solid transparent; box-sizing:border-box;
+           position:relative; top:-2px; }}
+  .creac.empty {{ opacity:0; border:1.5px dashed var(--mut); transition:opacity .1s; }}
+  .row:hover .creac.empty {{ opacity:.55; }}
+  .creac.l-C {{ color:var(--cC); border-color:var(--cC);
+               background:color-mix(in srgb, currentColor 12%, transparent); }}
+  .creac.l-R {{ color:var(--cR); border-color:var(--cR);
+               background:color-mix(in srgb, currentColor 12%, transparent); }}
+  .creac.l-E {{ color:var(--cE); border-color:var(--cE);
+               background:color-mix(in srgb, currentColor 12%, transparent); }}
+  .creac.l-A {{ color:var(--cA); border-color:var(--cA);
+               background:color-mix(in srgb, currentColor 12%, transparent); }}
+  body.readonly .creac {{ pointer-events:none; }}
+  body.readonly .creac.empty {{ display:none; }}
   code {{ font:0.88em var(--mono); background:var(--codebg); padding:1px 5px; border-radius:4px; }}
   .txt.editing {{ background:var(--editbg); outline:1.5px solid var(--acc); border-radius:4px;
                  padding:0 4px; margin:0 -4px; cursor:text; caret-color:var(--acc); }}
@@ -352,6 +390,25 @@ PAGE = """<!DOCTYPE html>
   const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
                     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+  // CREAC (Neumann's shorthand) role tag: trailing ' {{X}}' on the raw bullet
+  const CREAC = ['C', 'R', 'E', 'A'];
+  const CREAC_TITLES = {{C: 'Conclusion', R: 'Rule', E: 'Explanation', A: 'Application'}};
+  function splitCreac(raw) {{
+    const m = raw.match(/^([\\s\\S]*?)\\s*\\{{([CREA])\\}}\\s*$/);
+    return m ? {{text: m[1], letter: m[2]}} : {{text: raw, letter: null}};
+  }}
+  function cycleCreac(badge) {{
+    const span = badge.closest('.main').querySelector('.txt');
+    if (span.isContentEditable) return;
+    const cur = splitCreac(span.dataset.raw);
+    const next = cur.letter === null ? 'C'
+               : cur.letter === 'A' ? null
+               : CREAC[CREAC.indexOf(cur.letter) + 1];
+    span.dataset.raw = next ? cur.text + ' {{' + next + '}}' : cur.text;
+    renumberChips();
+    markDirty();
+  }}
+
   // client-side mirror of the server's render_inline
   function renderMd(t) {{
     let heading = 0;
@@ -401,7 +458,7 @@ PAGE = """<!DOCTYPE html>
       stack.push(node);
     }});
     function renderNode(n) {{
-      const d = renderMd(n.raw);
+      const d = renderMd(splitCreac(n.raw).text);
       const grip = '<span class="grip" draggable="true" title="drag to move">⋮⋮</span>';
       const span = '<span class="txt ' + d.cls + '" data-raw="' + esc(n.raw) + '">' + d.html + '</span></div>' +
                    '<span class="act"><button class="del" type="button" title="delete bullet" aria-label="delete bullet"></button></span>';
@@ -441,8 +498,25 @@ PAGE = """<!DOCTYPE html>
             chip.textContent = k;
           }} else if (chip) {{
             chip.remove();
+            chip = null;
           }}
           span.closest('.row').classList.toggle('numbered', numbered);
+          // CREAC badge sits before the number chip: a letter when tagged,
+          // an empty click target on numbered rows, nothing otherwise
+          const letter = splitCreac(raw).letter;
+          let badge = li.querySelector(':scope > .row > .main > .creac');
+          if (letter || numbered) {{
+            if (!badge) {{
+              badge = document.createElement('span');
+              (chip || span).before(badge);
+            }}
+            badge.className = 'creac ' + (letter ? 'l-' + letter : 'empty');
+            badge.textContent = letter || '';
+            badge.title = letter ? CREAC_TITLES[letter] + ' — click to cycle CREAC'
+                                 : 'click to cycle CREAC';
+          }} else if (badge) {{
+            badge.remove();
+          }}
         }}
         const sub = li.querySelector(':scope > ul');
         if (sub) walk(sub, isHeading);
@@ -606,6 +680,8 @@ PAGE = """<!DOCTYPE html>
   tree.addEventListener('click', e => {{
     const caret = e.target.closest('.caret');
     if (caret) {{ caret.closest('li').classList.toggle('open'); return; }}
+    const badge = e.target.closest('.creac');
+    if (badge) {{ if (EDITABLE) cycleCreac(badge); return; }}
     const del = e.target.closest('.del');
     if (del) {{ if (EDITABLE) askDelete(del.closest('.row')); return; }}
     const ok = e.target.closest('.ok');
@@ -641,7 +717,7 @@ PAGE = """<!DOCTYPE html>
       if (!val || val === span.dataset.raw) {{ cancel(); return; }}
       span.dataset.raw = val;
       cleanup();
-      const d = renderMd(val);
+      const d = renderMd(splitCreac(val).text);
       span.innerHTML = d.html;
       span.className = 'txt ' + d.cls;
       const liEl = span.closest('li');
@@ -878,7 +954,7 @@ def build_page(source: Path, editable: bool) -> str:
         editable="true" if editable else "false",
         bodycls="" if editable else "readonly",
         filehash=file_hash(text),
-        hint="click to edit · Enter adds a bullet below · drag to move · hover between bullets to insert · trash to delete · ⌘Z undoes · Markdown for raw view · Save (⌘S) writes to the .md"
+        hint="click to edit · Enter adds a bullet below · drag to move · hover between bullets to insert · letter badge cycles CREAC · trash to delete · ⌘Z undoes · Markdown for raw view · Save (⌘S) writes to the .md"
         if editable else "",
     )
 

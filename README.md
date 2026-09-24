@@ -50,6 +50,12 @@ back to the `.md` only when you press **Save**.
   bullet (and not themselves headings or `[bracketed placeholders]`) get a
   small sequential number chip. Numbers are **computed by the UI, never stored
   in the file**, and recompute live on every reorder.
+- **CREAC role badges** (Neumann's shorthand) — a one-letter badge before the
+  paragraph number marks the paragraph's role: **C**onclusion, **R**ule,
+  **E**xplanation, **A**pplication. Clicking the badge (or the faint circle
+  that appears on hover) cycles C → R → E → A → unset. Roles are stored in the
+  file as a trailing ` {R}` tag on the bullet's line — visible in the markdown
+  view, stripped from the rendered text.
 - **Nesting rules** — nothing can be nested under a non-heading bullet via
   the tree view (paragraphs are the deepest level an operation may create),
   and a heading can only be moved under a heading of a shallower level, so a
