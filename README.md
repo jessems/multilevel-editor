@@ -29,6 +29,10 @@ back to the `.md` only when you press **Save**.
 - **Click to edit in place** — the bullet's raw markdown, same font and
   position as the rendered view. Enter or click away stages the edit; Esc
   cancels.
+- **Enter continues the outline** — staging a non-empty bullet with Enter
+  opens a new bullet directly underneath it (first child of an open branch,
+  else next sibling). Shift+Enter stages without creating one; Enter on an
+  empty bullet just exits.
 - **Tab / Shift+Tab while editing** — indent under the previous sibling /
   outdent to after the parent, subtree included, caret preserved.
 - **Drag to move** — a grip appears on hover; dragging moves the bullet with

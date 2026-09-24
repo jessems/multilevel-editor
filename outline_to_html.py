@@ -691,7 +691,15 @@ PAGE = """<!DOCTYPE html>
       suppressBlur = false;
     }};
     const onKey = ev => {{
-      if (ev.key === 'Enter') {{ ev.preventDefault(); stage(); }}
+      if (ev.key === 'Enter') {{
+        ev.preventDefault();
+        const val = span.textContent.replace(/\\n+/g, ' ').trim();
+        const liEl = span.closest('li');
+        stage();
+        // plain Enter on a non-empty bullet continues the outline below it;
+        // Shift+Enter (or an emptied bullet) just stages and exits
+        if (!ev.shiftKey && val && liEl.isConnected) spawnBelow(liEl);
+      }}
       if (ev.key === 'Escape') {{ ev.preventDefault(); cancel(); }}
       if (ev.key === 'Tab') {{ ev.preventDefault(); indentOutdent(ev.shiftKey); }}
     }};
@@ -735,8 +743,7 @@ PAGE = """<!DOCTYPE html>
     if (insertTarget && !e.target.closest('#insertHint') && !e.target.closest('#tree')) hideInsert();
   }});
   window.addEventListener('scroll', hideInsert, {{ passive: true }});
-  insertHint.addEventListener('click', () => {{
-    if (!insertTarget) return;
+  function freshBullet() {{
     const li = document.createElement('li');
     li.className = 'leaf';
     li.dataset.pendingNew = '1';
@@ -745,11 +752,32 @@ PAGE = """<!DOCTYPE html>
       '<span class="dot"></span><span class="txt item" data-raw=""></span></div>' +
       '<span class="act"><button class="del" type="button" title="delete bullet" ' +
       'aria-label="delete bullet"></button></span></div>';
+    return li;
+  }}
+  function openBullet(li) {{
+    renumberChips();
+    startEdit(li.querySelector('.txt'), {{ preventDefault() {{}} }});
+  }}
+  // Enter while editing spawns the next bullet visually underneath: the first
+  // child of an open branch (when nesting allows), else the next sibling.
+  function spawnBelow(li) {{
+    const nb = freshBullet();
+    if (li.classList.contains('branch') && li.classList.contains('open') && !newLeafNestError(li)) {{
+      li.querySelector(':scope > ul').prepend(nb);
+    }} else if (!newLeafNestError(parentLiOf(li))) {{
+      li.after(nb);
+    }} else {{
+      return;                                  // nowhere legal to put it — just exit edit mode
+    }}
+    openBullet(nb);
+  }}
+  insertHint.addEventListener('click', () => {{
+    if (!insertTarget) return;
+    const li = freshBullet();
     if (insertTarget.where === 'before') insertTarget.li.before(li);
     else insertTarget.li.after(li);
     hideInsert();
-    renumberChips();
-    startEdit(li.querySelector('.txt'), {{ preventDefault() {{}} }});
+    openBullet(li);
   }});
 
   // drag-to-move — pure DOM; chips recompute; synced on Save
@@ -850,7 +878,7 @@ def build_page(source: Path, editable: bool) -> str:
         editable="true" if editable else "false",
         bodycls="" if editable else "readonly",
         filehash=file_hash(text),
-        hint="click to edit · drag to move · hover between bullets to insert · trash to delete · ⌘Z undoes · Markdown for raw view · Save (⌘S) writes to the .md"
+        hint="click to edit · Enter adds a bullet below · drag to move · hover between bullets to insert · trash to delete · ⌘Z undoes · Markdown for raw view · Save (⌘S) writes to the .md"
         if editable else "",
     )
 
