@@ -33,12 +33,15 @@ back to the `.md` only when you press **Save**.
   outdent to after the parent, subtree included, caret preserved.
 - **Drag to move** — a grip appears on hover; dragging moves the bullet with
   its whole subtree, with a drop indicator above/below the target.
+- **Insert between** — hovering the boundary between two bullets shows a line
+  with a plus; clicking it creates a new bullet there and opens it for
+  editing. Leaving it empty (or Esc) cancels the insert.
 - **Delete** — a trash icon appears at the right of a bullet on hover; clicking
   it swaps in a check and a cross. The check removes the bullet with its whole
   subtree, the cross (or Esc) cancels.
-- **Undo / redo** — Cmd/Ctrl+Z reverses the last move (drag, Tab, Shift+Tab)
-  or delete; Cmd/Ctrl+Shift+Z redoes it. Text edits keep the browser's own
-  undo while editing.
+- **Undo / redo** — Cmd/Ctrl+Z reverses the last move (drag, Tab, Shift+Tab),
+  delete, or insert; Cmd/Ctrl+Shift+Z redoes it. Text edits keep the browser's
+  own undo while editing.
 - **Automatic paragraph numbering** — bullets sitting directly under a heading
   bullet (and not themselves headings or `[bracketed placeholders]`) get a
   small sequential number chip. Numbers are **computed by the UI, never stored

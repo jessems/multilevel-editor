@@ -16,9 +16,10 @@ Static mode writes <outline>.html beside the source (read-only view).
 Serve mode starts a local server and opens the browser. Edits are STAGED in
 the page, not written immediately: click a bullet to edit its text (Enter or
 click away stages it; Esc cancels), drag the hover grip to move a bullet with
-its whole subtree (number chips recompute as you go), or press the Markdown
-button to edit the raw outline as text (add/delete/bulk-edit bullets) and
-toggle back. Any staged change activates the Save button in the header;
+its whole subtree (number chips recompute as you go), hover the boundary
+between two bullets and click the plus to insert a new bullet there, or press
+the Markdown button to edit the raw outline as text (add/delete/bulk-edit
+bullets) and toggle back. Any staged change activates the Save button in the header;
 pressing Save writes the whole outline back to the .md (frontmatter
 preserved). If the file changed on disk since the page was loaded, Save is
 refused (409) rather than clobbering. Closing the tab with unsaved changes
@@ -280,6 +281,21 @@ PAGE = """<!DOCTYPE html>
   .row.drop-before > .main {{ box-shadow:0 -2px 0 var(--acc); }}
   .row.drop-after > .main {{ box-shadow:0 2px 0 var(--acc); }}
 
+  /* insert-between affordance: a line with a centred plus that appears when
+     hovering the boundary between two rows; clicking inserts a bullet there */
+  #insertHint {{ position:fixed; display:none; align-items:center; gap:6px;
+                height:20px; z-index:3; cursor:pointer; }}
+  #insertHint.show {{ display:flex; }}
+  #insertHint::before, #insertHint::after {{ content:''; flex:1 1 auto; height:2px;
+                background:var(--acc); border-radius:1px; opacity:.5; }}
+  #insertHint .plus {{ flex:0 0 auto; width:20px; height:20px; border-radius:50%;
+                border:1px solid var(--acc); background:var(--btn); color:var(--acc);
+                font:700 14px/16px var(--sans); text-align:center; padding:0;
+                cursor:pointer; }}
+  #insertHint:hover::before, #insertHint:hover::after {{ opacity:.9; }}
+  #insertHint:hover .plus {{ background:var(--acc); color:var(--bg); }}
+  body.readonly #insertHint {{ display:none; }}
+
   @media (max-width: 640px) {{
     body {{ font-size:16px; }}
     header {{ padding:8px 14px; }}
@@ -306,6 +322,7 @@ PAGE = """<!DOCTYPE html>
 <ul id="tree">{tree}</ul>
 <textarea id="mdview" spellcheck="false"></textarea>
 </main>
+<div id="insertHint"><button class="plus" type="button" title="insert bullet" aria-label="insert bullet">+</button></div>
 <script>
   const EDITABLE = {editable};
   const FILEHASH = "{filehash}";
@@ -615,7 +632,9 @@ PAGE = """<!DOCTYPE html>
     const cleanup = () => {{ done = true; span.contentEditable = 'false';
       span.classList.remove('editing');
       span.removeEventListener('keydown', onKey); span.removeEventListener('blur', onBlur); }};
-    const cancel = () => {{ cleanup(); span.innerHTML = prev; }};
+    const cancel = () => {{ cleanup(); span.innerHTML = prev;
+      const liEl = span.closest('li');
+      if (liEl && liEl.dataset.pendingNew) {{ liEl.remove(); renumberChips(); }} }};
     const stage = () => {{
       if (done) return;
       const val = span.textContent.replace(/\\n+/g, ' ').trim();
@@ -625,6 +644,12 @@ PAGE = """<!DOCTYPE html>
       const d = renderMd(val);
       span.innerHTML = d.html;
       span.className = 'txt ' + d.cls;
+      const liEl = span.closest('li');
+      if (liEl && liEl.dataset.pendingNew) {{     // a bullet born from insert-between
+        delete liEl.dataset.pendingNew;
+        recordChange(liEl, null, posOf(liEl), 'insert');
+        flash('inserted · ⌘Z to undo');
+      }}
       renumberChips();                              // heading-ness may have changed
       markDirty();
     }};
@@ -674,6 +699,58 @@ PAGE = """<!DOCTYPE html>
     span.addEventListener('keydown', onKey);
     span.addEventListener('blur', onBlur);
   }}
+
+  // ---- insert-between: hover a row boundary -> line+plus -> new bullet ----
+  const insertHint = document.getElementById('insertHint');
+  let insertTarget = null;   // {{ li, where: 'before'|'after' }}
+  function hideInsert() {{ insertHint.classList.remove('show'); insertTarget = null; }}
+  const newLeafNestError = parentLi =>
+    !parentLi || headingLevel(parentLi) ? null : 'no indentation beyond paragraph level';
+  tree.addEventListener('mousemove', e => {{
+    if (!EDITABLE || dragLi) {{ hideInsert(); return; }}
+    if (document.activeElement && document.activeElement.isContentEditable) {{ hideInsert(); return; }}
+    const row = e.target.closest('.row');
+    if (!row) {{ hideInsert(); return; }}
+    const rect = row.getBoundingClientRect();
+    const EDGE = 7;
+    let tgt = null;
+    if (e.clientY < rect.top + EDGE) {{
+      tgt = {{ li: row.closest('li'), where: 'before', y: rect.top }};
+    }} else if (e.clientY > rect.bottom - EDGE) {{
+      const rows = [...tree.querySelectorAll('.row')].filter(r => r.offsetParent !== null);
+      const next = rows[rows.indexOf(row) + 1];
+      tgt = next
+        ? {{ li: next.closest('li'), where: 'before', y: next.getBoundingClientRect().top }}
+        : {{ li: row.closest('li'), where: 'after', y: rect.bottom }};
+    }}
+    if (!tgt || newLeafNestError(parentLiOf(tgt.li))) {{ hideInsert(); return; }}
+    const mrect = tgt.li.querySelector(':scope > .row > .main').getBoundingClientRect();
+    insertHint.style.left = mrect.left + 'px';
+    insertHint.style.width = mrect.width + 'px';
+    insertHint.style.top = (tgt.y - 10) + 'px';
+    insertHint.classList.add('show');
+    insertTarget = tgt;
+  }});
+  document.addEventListener('mousemove', e => {{
+    if (insertTarget && !e.target.closest('#insertHint') && !e.target.closest('#tree')) hideInsert();
+  }});
+  window.addEventListener('scroll', hideInsert, {{ passive: true }});
+  insertHint.addEventListener('click', () => {{
+    if (!insertTarget) return;
+    const li = document.createElement('li');
+    li.className = 'leaf';
+    li.dataset.pendingNew = '1';
+    li.innerHTML = '<div class="row"><div class="main">' +
+      '<span class="grip" draggable="true" title="drag to move">⋮⋮</span>' +
+      '<span class="dot"></span><span class="txt item" data-raw=""></span></div>' +
+      '<span class="act"><button class="del" type="button" title="delete bullet" ' +
+      'aria-label="delete bullet"></button></span></div>';
+    if (insertTarget.where === 'before') insertTarget.li.before(li);
+    else insertTarget.li.after(li);
+    hideInsert();
+    renumberChips();
+    startEdit(li.querySelector('.txt'), {{ preventDefault() {{}} }});
+  }});
 
   // drag-to-move — pure DOM; chips recompute; synced on Save
   let dragLi = null;
@@ -765,7 +842,7 @@ def build_page(source: Path, editable: bool) -> str:
         editable="true" if editable else "false",
         bodycls="" if editable else "readonly",
         filehash=file_hash(text),
-        hint="click to edit · drag to move · trash to delete · ⌘Z undoes a move or delete · Markdown for raw view · Save writes to the .md"
+        hint="click to edit · drag to move · hover between bullets to insert · trash to delete · ⌘Z undoes · Markdown for raw view · Save writes to the .md"
         if editable else "",
     )
 
