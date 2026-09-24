@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "multilevel-editor"
+version = "0.1.0"
+description = "Browser editor for nested-bullet markdown outlines — collapsible tree, click-to-edit, drag-to-move, staged saves back to the .md."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Jesse Szepieniec" }]
+requires-python = ">=3.9"
+classifiers = [
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Text Editors",
+    "Topic :: Text Processing :: Markup :: Markdown",
+]
+
+[project.urls]
+Repository = "https://github.com/jessems/multilevel-editor"
+
+[project.scripts]
+multilevel-editor = "outline_to_html:main"
+
+[tool.setuptools]
+py-modules = ["outline_to_html"]

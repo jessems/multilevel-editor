@@ -3,6 +3,16 @@
 View and edit nested-bullet markdown outlines in the browser. One Python file,
 standard library only, no build step, no dependencies.
 
+Run it npx-style with [uv](https://docs.astral.sh/uv/) — no install, always the
+latest published version:
+
+```bash
+uvx --refresh --from git+https://github.com/jessems/multilevel-editor multilevel-editor outline.md --serve
+```
+
+(Drop `--refresh` to reuse uv's cache offline; pin a version with
+`git+…@<tag-or-sha>`.) Or just run the file — it's stdlib-only:
+
 ```bash
 python3 outline_to_html.py examples/demo.md              # static HTML export (read-only)
 python3 outline_to_html.py examples/demo.md --serve      # editable, served locally
