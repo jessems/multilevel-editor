@@ -759,6 +759,7 @@ PAGE = """<!DOCTYPE html>
   tree.addEventListener('dragstart', e => {{
     const g = e.target.closest('.grip');
     if (!g || !EDITABLE) {{ e.preventDefault(); return; }}
+    hideInsert();   // a visible insert hint would sit over the drop zone and swallow dragover
     dragLi = g.closest('li');
     dragLi.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
