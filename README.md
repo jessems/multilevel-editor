@@ -53,9 +53,10 @@ back to the `.md` only when you press **Save**.
 - **Markdown view** — a header toggle swaps the tree for a raw-markdown
   textarea of the current staged state: bulk-edit, add, delete, re-indent
   bullets, then toggle back or Save directly.
-- **Save with conflict safety** — the page carries a hash of the file it was
-  built from; if the file changed on disk, Save is refused instead of
-  clobbering. Closing the tab with unsaved changes prompts a warning.
+- **Save with conflict safety** — the Save button or **Cmd/Ctrl+S** writes the
+  staged outline back; the page carries a hash of the file it was built from,
+  and if the file changed on disk the save is refused instead of clobbering.
+  Closing the tab with unsaved changes prompts a warning.
 
 ## File format
 

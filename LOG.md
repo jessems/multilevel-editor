@@ -1,0 +1,2 @@
+
+## [2026-09-24] fix | multilevel-editor: insert-between hint swallowed drop-above drags — the fixed-position hint strip sat over the drop-before zone and, with no mousemove firing during native drags, never hid, hit-testing outside #tree and eating dragover; fixed by hiding the hint on dragstart (upstream commit, v0.2.1); reproduced and verified with Playwright (hint hides at dragstart, drop zone hit-tests into tree, full drag-above moves the bullet); live server relaunched via uvx

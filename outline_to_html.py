@@ -799,7 +799,7 @@ PAGE = """<!DOCTYPE html>
   }});
 
   // Save — serialize current view and write the whole file
-  saveBtn.addEventListener('click', async () => {{
+  async function doSave() {{
     let bullets;
     if (document.body.classList.contains('mdmode')) {{
       bullets = parseMarkdown(mdview.value);
@@ -818,6 +818,13 @@ PAGE = """<!DOCTYPE html>
       dirty = false;
       location.reload();
     }} catch (err) {{ flash('save failed: ' + err.message, 'error'); }}
+  }}
+  saveBtn.addEventListener('click', doSave);
+  document.addEventListener('keydown', e => {{
+    if (!EDITABLE || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+    if (e.key.toLowerCase() !== 's') return;
+    e.preventDefault();                       // never the browser's save-page dialog
+    if (dirty) doSave(); else flash('no changes to save');
   }});
 </script>
 </body>
@@ -843,7 +850,7 @@ def build_page(source: Path, editable: bool) -> str:
         editable="true" if editable else "false",
         bodycls="" if editable else "readonly",
         filehash=file_hash(text),
-        hint="click to edit · drag to move · hover between bullets to insert · trash to delete · ⌘Z undoes · Markdown for raw view · Save writes to the .md"
+        hint="click to edit · drag to move · hover between bullets to insert · trash to delete · ⌘Z undoes · Markdown for raw view · Save (⌘S) writes to the .md"
         if editable else "",
     )
 
