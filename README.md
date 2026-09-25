@@ -26,10 +26,14 @@ back to the `.md` only when you press **Save**.
 - **Collapsible tree** — carets on branch bullets, plus a **level switch** in
   the header with one mode per depth the outline uses: `1` shows only the
   top-level bullets, `2` the top two levels, and so on up to the deepest
-  level, which shows everything. The buttons follow the outline (a fourth
-  level added in the markdown view adds a `4`), the active mode is
-  highlighted until a caret is toggled by hand, and the chosen level is
-  remembered per file so the reload after Save comes back at the same depth.
+  level, which shows everything. Deeper levels are **removed from view**, not
+  merely collapsed — a branch at the cut level shows a leaf dot, not a caret —
+  while carets keep working within the visible levels. The buttons follow the
+  outline (a fourth level added in the markdown view adds a `4`), the chosen
+  level is remembered per file so the reload after Save comes back at the
+  same depth, and editing never lands a bullet in a hidden level: Enter on a
+  cut-level bullet adds a sibling, and Tab into a hidden level is refused
+  with a notice.
 - **Reading typography** — a book-like serif at a comfortable measure, with
   a dark palette that follows the system colour scheme.
 - **Click to edit in place** — the bullet's raw markdown, same font and

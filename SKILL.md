@@ -59,7 +59,9 @@ warning. Save serializes the whole outline from the page and rewrites the
   is shown; frontmatter stays untouched.
 - **Collapse/expand** via the caret on branch bullets; the header's **level
   switch** has one mode per depth the outline uses (`1` = top level only, …,
-  deepest = everything), remembered per file across reloads. Text selection
+  deepest = everything); deeper levels are removed from view, not collapsed
+  (cut-level branches show a dot, Tab into a hidden level is refused), and
+  the choice is remembered per file across reloads. Text selection
   inside a bullet triggers edit
   mode — Esc backs out without saving.
 - **Conflict safety**: the page carries a hash of the file it was built from;
