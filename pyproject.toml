@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "multilevel-editor"
-version = "0.3.0"
+version = "0.3.1"
 description = "Browser editor for nested-bullet markdown outlines — collapsible tree, click-to-edit, drag-to-move, staged saves back to the .md."
 readme = "README.md"
 license = { text = "MIT" }

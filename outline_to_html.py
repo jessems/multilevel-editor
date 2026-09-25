@@ -122,9 +122,9 @@ def render_node(node) -> str:
     numbered = bool(node.get("num"))
     if letter:
         badge = (f'<span class="creac l-{letter}" '
-                 f'title="{CREAC_TITLES[letter]} — click to cycle CREAC">{letter}</span>')
+                 f'data-tip="{CREAC_TITLES[letter]}">{letter}</span>')
     elif numbered:
-        badge = '<span class="creac empty" title="click to cycle CREAC"></span>'
+        badge = '<span class="creac empty" data-tip="tag CREAC role"></span>'
     else:
         badge = ""
     chip = f'<span class="pnum">{node["num"]}</span>' if numbered else ""
@@ -264,6 +264,18 @@ PAGE = """<!DOCTYPE html>
            border:1.5px solid transparent; box-sizing:border-box;
            position:relative; top:-2px; }}
   .creac.empty {{ opacity:0; border:1.5px dashed var(--mut); transition:opacity .1s; }}
+  /* an empty flex item has no text baseline and would align by its bottom
+     edge — a zero-width space gives it the same baseline as a lettered badge */
+  .creac.empty::before {{ content:'\\200B'; }}
+  .creac.empty:hover {{ opacity:1; }}
+  /* black tooltip naming the CREAC role */
+  .creac::after {{ content:attr(data-tip); position:absolute;
+                  bottom:calc(100% + 7px); left:50%; transform:translateX(-50%);
+                  background:#111; color:#fff; padding:4px 9px; border-radius:5px;
+                  font:500 11px/1.35 var(--sans); letter-spacing:.01em;
+                  white-space:nowrap; opacity:0; visibility:hidden;
+                  transition:opacity .1s; pointer-events:none; z-index:4; }}
+  .creac:hover::after {{ opacity:1; visibility:visible; }}
   .row:hover .creac.empty {{ opacity:.55; }}
   .creac.l-C {{ color:var(--cC); border-color:var(--cC);
                background:color-mix(in srgb, currentColor 12%, transparent); }}
@@ -512,8 +524,7 @@ PAGE = """<!DOCTYPE html>
             }}
             badge.className = 'creac ' + (letter ? 'l-' + letter : 'empty');
             badge.textContent = letter || '';
-            badge.title = letter ? CREAC_TITLES[letter] + ' — click to cycle CREAC'
-                                 : 'click to cycle CREAC';
+            badge.dataset.tip = letter ? CREAC_TITLES[letter] : 'tag CREAC role';
           }} else if (badge) {{
             badge.remove();
           }}
