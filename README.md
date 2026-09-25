@@ -39,7 +39,9 @@ back to the `.md` only when you press **Save**.
   its whole subtree, with a drop indicator above/below the target.
 - **Insert between** — hovering the boundary between two bullets shows a line
   with a plus; clicking it creates a new bullet there and opens it for
-  editing. Leaving it empty (or Esc) cancels the insert.
+  editing. Leaving it empty (or Esc) cancels the insert. The hint also works
+  while another bullet is being edited: clicking the plus stages that edit
+  first, then opens the new bullet.
 - **Delete** — a trash icon appears at the right of a bullet on hover; clicking
   it swaps in a check and a cross. The check removes the bullet with its whole
   subtree, the cross (or Esc) cancels.

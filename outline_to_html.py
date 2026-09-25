@@ -958,7 +958,8 @@ PAGE = """<!DOCTYPE html>
     !parentLi || headingLevel(parentLi) ? null : 'no indentation beyond paragraph level';
   tree.addEventListener('mousemove', e => {{
     if (!EDITABLE || dragLi) {{ hideInsert(); return; }}
-    if (document.activeElement && document.activeElement.isContentEditable) {{ hideInsert(); return; }}
+    // editing a bullet does NOT suppress the hint: the plus stays reachable, and
+    // its mousedown blurs (stages) the open edit before the new bullet opens
     const row = e.target.closest('.row');
     if (!row) {{ hideInsert(); return; }}
     const rect = row.getBoundingClientRect();
@@ -1013,11 +1014,31 @@ PAGE = """<!DOCTYPE html>
     }}
     openBullet(nb);
   }}
+  // Clicking the plus while a bullet is being edited: the mousedown blurs
+  // (stages) that edit before the click lands. If the edit was an empty
+  // pending bullet it is removed by then — and it may be the very target the
+  // hint pointed at — so snapshot its neighbours on mousedown and fall back to
+  // them when the target is no longer in the tree.
+  let insertAnchor = null;
+  insertHint.addEventListener('mousedown', () => {{
+    if (!insertTarget) return;
+    const t = insertTarget.li;
+    insertAnchor = {{ prev: t.previousElementSibling, parent: t.parentElement }};
+  }});
   insertHint.addEventListener('click', () => {{
     if (!insertTarget) return;
     const li = freshBullet();
-    if (insertTarget.where === 'before') insertTarget.li.before(li);
-    else insertTarget.li.after(li);
+    const t = insertTarget.li;
+    if (t.isConnected) {{
+      if (insertTarget.where === 'before') t.before(li); else t.after(li);
+    }} else if (insertAnchor && insertAnchor.prev && insertAnchor.prev.isConnected) {{
+      insertAnchor.prev.after(li);
+    }} else if (insertAnchor && insertAnchor.parent && insertAnchor.parent.isConnected) {{
+      insertAnchor.parent.prepend(li);
+    }} else {{
+      hideInsert(); return;
+    }}
+    insertAnchor = null;
     hideInsert();
     openBullet(li);
   }});
