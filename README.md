@@ -54,8 +54,7 @@ back to the `.md` only when you press **Save**.
   marks the paragraph's argumentative role; clicking it (or the faint circle
   that appears on hover) cycles through the active scheme's letters and back
   to unset, with a black tooltip naming each role. Toggle tagging and pick the
-  scheme in the **settings sidebar** (☰, top right; persisted in
-  localStorage):
+  scheme in the **settings sidebar** (cog, top right):
   - **CREAC** (Neumann) — **C**onclusion · **R**ule · **E**xplanation ·
     **A**pplication
   - **Syllogism** (Scalia & Garner) — **M**ajor premise (the rule) ·

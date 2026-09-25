@@ -350,8 +350,14 @@ PAGE = """<!DOCTYPE html>
   body.readonly .creac {{ pointer-events:none; }}
   body.readonly .creac.empty {{ display:none; }}
 
-  /* ---------- settings sidebar (opened from the top-right menu) ---------- */
-  #menuBtn {{ font-size:14px; padding:5px 10px; }}
+  /* ---------- settings sidebar (opened from the top-right cog) ---------- */
+  #menuBtn {{ width:30px; padding:5px 0; }}
+  #menuBtn::before {{ content:''; display:inline-block; width:15px; height:15px;
+    vertical-align:middle; background:currentColor;
+    -webkit-mask:var(--icon) center/contain no-repeat;
+    mask:var(--icon) center/contain no-repeat;
+    --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3Cpath d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z'/%3E%3C/svg%3E"); }}
+  #menuBtn:hover::before {{ background:var(--acc); }}
   body.readonly #menuBtn {{ display:none; }}
   #sidebar {{ position:fixed; top:0; right:0; bottom:0; width:300px; z-index:6;
              background:var(--bg); border-left:1px solid var(--line);
@@ -455,7 +461,7 @@ PAGE = """<!DOCTYPE html>
   <span class="hint">{hint}</span>
   <span id="status"></span>
   <button id="saveBtn" disabled>Save</button>
-  <button id="menuBtn" aria-label="settings" title="settings">☰</button>
+  <button id="menuBtn" aria-label="settings" title="settings"></button>
 </header>
 <aside id="sidebar" aria-label="settings">
   <div class="sb-head"><h2>Settings</h2><button id="sbClose" aria-label="close">×</button></div>
