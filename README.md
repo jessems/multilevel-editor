@@ -39,6 +39,18 @@ back to the `.md` only when you press **Save**.
   its whole subtree, with a drop indicator above/below the target. The target
   is picked by height: releasing in the indent gutter or the page margin,
   level with a row, drops beside that row.
+- **Scalia scheme + dependency layer** — a fourth tagging scheme, *Scalia*
+  (R rule · F fact · I intermediate conclusion · C conclusion: Scalia &
+  Garner's syllogism run recursively, each heading being the conclusion of
+  its own paragraphs). The sidecar can also carry `deps:` (which earlier
+  bullets a paragraph rests on, rendered as a "← 3, 6" chip whose numbers
+  follow the live paragraph numbering) and `verdicts:` (✓/✗ on a heading:
+  earned by its paragraphs or not). Hovering a row lights what it rests on
+  and what rests on it. Deps and verdicts survive edits, moves and the
+  markdown-view round trip: every bullet carries the fingerprint it was
+  loaded with as an identity token, and Save re-keys through it. They are
+  written by an external classifier (e.g. `scalia_classify.py`); the editor
+  preserves them but does not create them.
 - **Insert between** — hovering the boundary between two bullets shows a line
   with a plus; clicking it creates a new bullet there and opens it for
   editing. Leaving it empty (or Esc) cancels the insert. The hint also works

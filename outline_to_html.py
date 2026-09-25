@@ -52,7 +52,7 @@ BULLET_RE = re.compile(r"^(\s*)- (.*)$")
 TAG_RE = re.compile(r"^(.*?)\s*\{([A-Za-z])\}\s*$", re.S)
 DEFAULT_TITLES = {"C": "Conclusion", "R": "Rule", "E": "Explanation", "A": "Application"}
 DEFAULT_POS = {"C": 1, "R": 2, "E": 3, "A": 4}
-SCHEME_NAMES = ("creac", "syllogism", "subsumtion")
+SCHEME_NAMES = ("creac", "syllogism", "subsumtion", "scalia")
 
 
 def split_tag(raw: str):
@@ -69,30 +69,54 @@ def tags_path(source: Path) -> Path:
 
 
 def load_meta(source: Path):
-    """Parse the sidecar (a deliberately flat YAML subset: 'scheme:' plus
-    'hash: letter' entries under 'tags:'; comments ignored)."""
-    meta = {"scheme": "creac", "tags": {}}
+    """Parse the sidecar (a deliberately flat YAML subset): 'scheme:', then
+    'hash: letter' entries under 'tags:', 'hash: hash hash…' under 'deps:'
+    (the bullets a bullet rests on) and 'hash: pass|fail' under 'verdicts:'
+    (whether a heading is earned by its paragraphs); comments ignored."""
+    meta = {"scheme": "creac", "tags": {}, "deps": {}, "verdicts": {}}
     p = tags_path(source)
     if not p.exists():
         return meta
+    section = None
     for line in p.read_text(encoding="utf-8").splitlines():
         m = re.match(r"^scheme:\s*(\w+)", line)
         if m and m.group(1) in SCHEME_NAMES:
             meta["scheme"] = m.group(1)
             continue
-        m = re.match(r"^\s+([0-9a-f]{8}):\s*([A-Za-z])\b", line)
+        m = re.match(r"^(tags|deps|verdicts):\s*(#.*)?$", line)
         if m:
-            meta["tags"][m.group(1)] = m.group(2)
+            section = m.group(1)
+            continue
+        m = re.match(r"^\s+([0-9a-f]{8}):\s*([^#]*?)\s*(#.*)?$", line)
+        if not m or section is None:
+            continue
+        key, val = m.group(1), m.group(2).strip()
+        if section == "tags" and re.fullmatch(r"[A-Za-z]", val):
+            meta["tags"][key] = val
+        elif section == "deps":
+            meta["deps"][key] = re.findall(r"[0-9a-f]{8}", val)
+        elif section == "verdicts" and val in ("pass", "fail"):
+            meta["verdicts"][key] = val
     return meta
 
 
-def write_meta(source: Path, scheme: str, tagged):
-    """Rewrite the sidecar from live state: tagged = [(clean_text, letter)].
-    No tags and the default scheme -> remove the sidecar entirely."""
+def write_meta(source: Path, scheme: str, tagged, deps=None, verdicts=None):
+    """Rewrite the sidecar from live state, everything keyed by live bullet
+    TEXT (fingerprints are computed here): tagged = [(text, letter)],
+    deps = {text: [text, …]} (what a bullet rests on), verdicts =
+    {heading_text: 'pass'|'fail'}. Nothing to record and the default
+    scheme -> remove the sidecar entirely."""
+    deps = {t: on for t, on in (deps or {}).items() if on}
+    verdicts = verdicts or {}
     p = tags_path(source)
-    if not tagged and scheme == "creac":
+    if not tagged and not deps and not verdicts and scheme == "creac":
         p.unlink(missing_ok=True)
         return
+
+    def quote(text):
+        q = " ".join(text.split())
+        return q[:48] + "…" if len(q) > 48 else q
+
     lines = [
         "# paragraph roles for " + source.name + " — maintained by multilevel-editor",
         "# keys are sha256[:8] of the bullet text; quotes are regenerated on save",
@@ -100,10 +124,15 @@ def write_meta(source: Path, scheme: str, tagged):
         "tags:",
     ]
     for text, letter in tagged:
-        quote = " ".join(text.split())
-        if len(quote) > 48:
-            quote = quote[:48] + "…"
-        lines.append(f"  {fingerprint(text)}: {letter}   # {quote}")
+        lines.append(f"  {fingerprint(text)}: {letter}   # {quote(text)}")
+    if deps:
+        lines.append("deps:")
+        for text, on in deps.items():
+            lines.append(f"  {fingerprint(text)}: {' '.join(fingerprint(t) for t in on)}   # {quote(text)}")
+    if verdicts:
+        lines.append("verdicts:")
+        for text, v in verdicts.items():
+            lines.append(f"  {fingerprint(text)}: {v}   # {quote(text)}")
     p.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -191,7 +220,9 @@ def render_node(node) -> str:
     span = (
         f'{chip}<span class="txt {cls}" '
         f'data-raw="{html.escape(node["raw"], quote=True)}" '
-        f'data-tag="{letter or ""}">{text}</span></div>'
+        f'data-tag="{letter or ""}" data-fp="{node.get("fp", "")}" '
+        f'data-deps="{" ".join(node.get("deps") or [])}" '
+        f'data-verdict="{node.get("verdict") or ""}">{text}</span></div>'
         f'<span class="act"><button class="del" type="button" title="delete bullet" aria-label="delete bullet"></button></span>'
     )
     if node["children"]:
@@ -349,6 +380,29 @@ PAGE = """<!DOCTYPE html>
                background:color-mix(in srgb, currentColor 10%, transparent); }}
   body.readonly .creac {{ pointer-events:none; }}
   body.readonly .creac.empty {{ display:none; }}
+  /* dependency chip "← 3, 6" after a paragraph: the paragraphs it rests on
+     (numbers recomputed by position, like the pnum chips); '?' = a referenced
+     bullet is no longer numbered on this page */
+  .deps {{ flex:0 0 auto; font:500 10.5px/1 var(--sans); color:var(--acc);
+          background:color-mix(in srgb, var(--acc) 10%, transparent);
+          border-radius:999px; padding:3px 7px; white-space:nowrap;
+          position:relative; top:-2px; cursor:default; }}
+  .deps.stale {{ color:var(--mut); background:none; border:1px dashed var(--mut); }}
+  /* heading verdict: earned by its paragraphs (✓) or not (✗) */
+  .verdict {{ flex:0 0 auto; font:700 13px/1 var(--sans); position:relative; top:-1px; cursor:default; }}
+  .verdict.pass {{ color:#2e7d4f; }}
+  .verdict.fail {{ color:#b3372a; }}
+  .deps::after, .verdict::after {{ content:attr(data-tip); position:absolute;
+                  bottom:calc(100% + 7px); left:50%; transform:translateX(-50%);
+                  background:#111; color:#fff; padding:4px 9px; border-radius:5px;
+                  font:500 11px/1.35 var(--sans); letter-spacing:.01em;
+                  white-space:nowrap; opacity:0; visibility:hidden;
+                  transition:opacity .1s; pointer-events:none; z-index:4; }}
+  .deps:hover::after, .verdict:hover::after {{ opacity:1; visibility:visible; }}
+  body.notags .deps, body.notags .verdict {{ display:none; }}
+  /* hovering a row lights what it rests on (rel-up) and what rests on it (rel-down) */
+  .row.rel-up > .main {{ background:color-mix(in srgb, var(--acc) 14%, transparent); }}
+  .row.rel-down > .main {{ box-shadow:inset 3px 0 0 var(--acc); }}
 
   /* ---------- settings sidebar (opened from the top-right cog) ---------- */
   /* pinned to the header corner — flex-wrap must never carry it to the left */
@@ -476,6 +530,8 @@ PAGE = """<!DOCTYPE html>
       <span class="sb-sub">Scalia &amp; Garner — Major premise · minor premise · Conclusion</span></span></label>
     <label class="sb-row"><input type="radio" name="scheme" value="subsumtion"> <span><b>Subsumtion</b>
       <span class="sb-sub">Gutachtenstil — Obersatz · Definition · Subsumtion · Ergebnis</span></span></label>
+    <label class="sb-row"><input type="radio" name="scheme" value="scalia"> <span><b>Scalia</b>
+      <span class="sb-sub">Recursive syllogism — Rule · Fact · Intermediate conclusion · Conclusion (+ what each rests on)</span></span></label>
   </fieldset>
 </aside>
 <main>
@@ -528,6 +584,14 @@ PAGE = """<!DOCTYPE html>
                       D: 'Definition — the rule\\u2019s elements',
                       S: 'Subsumtion — the facts applied to the elements',
                       E: 'Ergebnis — the result'}} }},
+    // house scheme: Scalia & Garner\'s syllogism (rule, fact, conclusion) plus
+    // the intermediate conclusion of chained arguments; edges live in the
+    // sidecar's deps: section and render as "← n, m" chips
+    scalia: {{ label: 'Scalia', letters: ['R', 'F', 'I', 'C'],
+             titles: {{R: 'Rule — what a norm requires or means',
+                      F: 'Fact — what happened or what the record shows',
+                      I: 'Intermediate conclusion — derived from earlier bullets, used by later ones',
+                      C: 'Conclusion — reaches or restates the heading\\u2019s claim'}} }},
   }};
   // the scheme is DOCUMENT metadata (persisted in the sidecar on Save);
   // only the tagging display toggle is a browser preference
@@ -580,7 +644,10 @@ PAGE = """<!DOCTYPE html>
       [...ul.children].forEach(li => {{
         const span = li.querySelector(':scope > .row .txt');
         if (span) bullets.push({{ indent: depth, raw: span.dataset.raw,
-                                 tag: span.dataset.tag || null }});
+                                 tag: span.dataset.tag || null,
+                                 fp: span.dataset.fp || null,
+                                 deps: (span.dataset.deps || '').split(' ').filter(Boolean),
+                                 verdict: span.dataset.verdict || null }});
         const sub = li.querySelector(':scope > ul');
         if (sub) walk(sub, depth + 1);
       }});
@@ -608,6 +675,12 @@ PAGE = """<!DOCTYPE html>
   }}
   function buildTree(bullets) {{
     undoStack.length = redoStack.length = 0;   // positions no longer valid
+    // identity/deps/verdict survive a markdown-view round trip by raw text
+    const carry = new Map();
+    tree.querySelectorAll('.txt').forEach(s => {{
+      if (s.dataset.fp) carry.set(s.dataset.raw, {{ fp: s.dataset.fp, deps: s.dataset.deps || '',
+                                                   verdict: s.dataset.verdict || '' }});
+    }});
     const root = {{ indent: -1, children: [] }};
     const stack = [root];
     bullets.forEach(b => {{
@@ -619,8 +692,10 @@ PAGE = """<!DOCTYPE html>
     function renderNode(n) {{
       const d = renderMd(n.raw);
       const grip = '<span class="grip" draggable="true" title="drag to move">⋮⋮</span>';
+      const c = carry.get(n.raw) || {{ fp: '', deps: '', verdict: '' }};
       const span = '<span class="txt ' + d.cls + '" data-raw="' + esc(n.raw) +
-                   '" data-tag="' + esc(n.tag || '') + '">' + d.html + '</span></div>' +
+                   '" data-tag="' + esc(n.tag || '') + '" data-fp="' + c.fp +
+                   '" data-deps="' + c.deps + '" data-verdict="' + c.verdict + '">' + d.html + '</span></div>' +
                    '<span class="act"><button class="del" type="button" title="delete bullet" aria-label="delete bullet"></button></span>';
       if (n.children.length) {{
         return '<li class="branch open"><div class="row"><div class="main">' + grip +
@@ -685,7 +760,57 @@ PAGE = """<!DOCTYPE html>
         if (sub) walk(sub, isHeading);
       }});
     }})(tree, true);
+    // second pass: "← n, m" chips (what a paragraph rests on, by fingerprint →
+    // current number) and ✓/✗ verdict marks on headings
+    const numOf = new Map();
+    tree.querySelectorAll('.txt').forEach(s => {{
+      const chip = s.previousElementSibling;
+      if (s.dataset.fp && chip && chip.classList.contains('pnum')) numOf.set(s.dataset.fp, chip.textContent);
+    }});
+    tree.querySelectorAll('.txt').forEach(s => {{
+      const main = s.parentElement;
+      const deps = (s.dataset.deps || '').split(' ').filter(Boolean);
+      let chip = main.querySelector(':scope > .deps');
+      if (deps.length) {{
+        if (!chip) {{ chip = document.createElement('span'); chip.className = 'deps'; s.after(chip); }}
+        const labels = deps.map(fp => numOf.get(fp) || '?');
+        chip.textContent = '\u2190 ' + labels.join(', ');
+        chip.classList.toggle('stale', labels.includes('?'));
+        chip.dataset.tip = 'rests on paragraph' + (labels.length > 1 ? 's ' : ' ') + labels.join(', ');
+      }} else if (chip) {{
+        chip.remove();
+      }}
+      const v = s.dataset.verdict;
+      let mark = main.querySelector(':scope > .verdict');
+      if (v === 'pass' || v === 'fail') {{
+        if (!mark) {{ mark = document.createElement('span'); (chip || s).after(mark); }}
+        mark.className = 'verdict ' + v;
+        mark.textContent = v === 'pass' ? '\u2713' : '\u2717';
+        mark.dataset.tip = v === 'pass' ? 'heading earned by its paragraphs' : 'heading not earned by its paragraphs';
+      }} else if (mark) {{
+        mark.remove();
+      }}
+    }});
   }}
+  // hovering a row lights the rows it rests on and the rows that rest on it
+  const clearRel = () => tree.querySelectorAll('.rel-up,.rel-down')
+    .forEach(r => r.classList.remove('rel-up', 'rel-down'));
+  tree.addEventListener('mouseover', e => {{
+    const row = e.target.closest('.row');
+    if (!row) return;
+    const s = row.querySelector(':scope > .main > .txt');
+    if (!s) return;
+    clearRel();
+    const fp = s.dataset.fp;
+    const deps = (s.dataset.deps || '').split(' ').filter(Boolean);
+    if (!fp && !deps.length) return;
+    tree.querySelectorAll('.txt').forEach(o => {{
+      if (o === s) return;
+      if (o.dataset.fp && deps.includes(o.dataset.fp)) o.closest('.row').classList.add('rel-up');
+      if (fp && (o.dataset.deps || '').split(' ').includes(fp)) o.closest('.row').classList.add('rel-down');
+    }});
+  }});
+  tree.addEventListener('mouseleave', clearRel);
 
   // nesting rules — returns an error message, or null when `li` may become a
   // child of `parentLi` (null = root level):
@@ -1203,6 +1328,9 @@ def build_page(source: Path, editable: bool) -> str:
             clean, inline = split_tag(n["raw"])
             n["raw"] = clean.strip()
             fp = fingerprint(n["raw"])
+            n["fp"] = fp                       # identity token for the page's lifetime
+            n["deps"] = meta["deps"].get(fp, [])
+            n["verdict"] = meta["verdicts"].get(fp)
             if fp in meta["tags"]:
                 n["tag"] = meta["tags"][fp]
                 used.add(fp)
@@ -1223,7 +1351,7 @@ def build_page(source: Path, editable: bool) -> str:
         filehash=combined_hash(source),
         scheme=meta["scheme"],
         orphans=orphans,
-        hint="click to edit · Enter adds a bullet below · drag to move · hover between bullets to insert · letter badge tags the paragraph role · trash to delete · ⌘Z undoes · Markdown for raw view · Save (⌘S) writes to the .md"
+        hint="click to edit · Enter adds a bullet below · drag to move · hover between bullets to insert · letter badge tags the paragraph role · ← chip = what a paragraph rests on · trash to delete · ⌘Z undoes · Markdown for raw view · Save (⌘S) writes to the .md"
         if editable else "",
     )
 
@@ -1265,17 +1393,30 @@ def serve(source: Path, port: int, open_browser: bool = True):
                         if line.strip() == "---":
                             break
                 lines, tagged = [], []
+                cleaned = []
                 for b in req["bullets"]:
                     clean = split_tag(b["raw"].strip())[0].strip()   # belt & braces: outline stays tag-free
                     lines.append("  " * b["indent"] + "- " + clean)
+                    cleaned.append(clean)
                     if b.get("tag"):
                         tagged.append((clean, b["tag"]))
+                # deps/verdicts travel keyed by the fingerprint the page was
+                # built with (data-fp), which survives edits and moves as an
+                # identity token; re-key them to the saved text here
+                by_fp = {b["fp"]: c for b, c in zip(req["bullets"], cleaned) if b.get("fp")}
+                deps, verdicts = {}, {}
+                for b, c in zip(req["bullets"], cleaned):
+                    on = [by_fp[h] for h in (b.get("deps") or []) if h in by_fp]
+                    if on:
+                        deps[c] = on
+                    if b.get("verdict") in ("pass", "fail"):
+                        verdicts[c] = b["verdict"]
                 scheme = req.get("scheme")
                 if scheme not in SCHEME_NAMES:
                     scheme = "creac"
                 out = "".join(fm) + ("\n" if fm else "") + "\n".join(lines) + "\n"
                 source.write_text(out, encoding="utf-8")
-                write_meta(source, scheme, tagged)
+                write_meta(source, scheme, tagged, deps, verdicts)
                 self._send(200, json.dumps({"ok": True}), "application/json")
                 print(f"  saved: {len(lines)} bullets, {len(tagged)} tags -> {tags_path(source).name}")
             except Exception as e:  # noqa: BLE001 — report any save failure to the client
