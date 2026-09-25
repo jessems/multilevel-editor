@@ -1186,7 +1186,7 @@ def build_page(source: Path, editable: bool) -> str:
     )
 
 
-def serve(source: Path, port: int):
+def serve(source: Path, port: int, open_browser: bool = True):
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code, body, ctype="text/html; charset=utf-8"):
             data = body.encode("utf-8")
@@ -1245,7 +1245,8 @@ def serve(source: Path, port: int):
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     url = f"http://127.0.0.1:{port}/"
     print(f"serving {source} at {url}  (staged edits write on Save; Ctrl-C to stop)")
-    webbrowser.open(url)
+    if open_browser:
+        webbrowser.open(url)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
@@ -1259,10 +1260,12 @@ def main():
     ap.add_argument("--serve", action="store_true",
                     help="serve with staged editing; Save syncs to the .md")
     ap.add_argument("--port", type=int, default=8383)
+    ap.add_argument("--no-browser", action="store_true",
+                    help="don't open a browser tab (for server restarts)")
     args = ap.parse_args()
 
     if args.serve:
-        serve(args.source, args.port)
+        serve(args.source, args.port, open_browser=not args.no_browser)
         return
     out = args.output or args.source.with_suffix(".html")
     out.write_text(build_page(args.source, editable=False), encoding="utf-8")
