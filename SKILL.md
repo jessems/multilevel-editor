@@ -58,8 +58,8 @@ warning. Save serializes the whole outline from the page and rewrites the
   (the tree rebuilds, chips recompute) or Save directly. Only the outline body
   is shown; frontmatter stays untouched.
 - **Collapse/expand** via the caret on branch bullets; the **level switch**
-  centred at the bottom of the header has one mode per depth the outline uses (`1` = top level only, …,
-  deepest = everything); deeper levels are removed from view, not collapsed
+  centred at the bottom of the header has one mode per depth the outline uses (`1` = top level only —
+  omitted when the top level is a lone title —, …, deepest = everything); deeper levels are removed from view, not collapsed
   (cut-level branches show a dot, Tab into a hidden level is refused), and
   the choice is remembered per file across reloads. Text selection
   inside a bullet triggers edit

@@ -26,7 +26,9 @@ back to the `.md` only when you press **Save**.
 - **Collapsible tree** — carets on branch bullets, plus a **level switch**
   centred at the bottom of the header with one mode per depth the outline uses: `1` shows only the
   top-level bullets, `2` the top two levels, and so on up to the deepest
-  level, which shows everything. Deeper levels are **removed from view**, not
+  level, which shows everything. When the top level is a single bullet (a
+  title) the `1` mode is omitted, since it would show nothing but the title.
+  Deeper levels are **removed from view**, not
   merely collapsed — a branch at the cut level shows a leaf dot, not a caret —
   while carets keep working within the visible levels. The buttons follow the
   outline (a fourth level added in the markdown view adds a `4`), the chosen

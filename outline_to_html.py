@@ -543,6 +543,9 @@ PAGE = """<!DOCTYPE html>
     return d;
   }}
   const hiddenAt = d => level > 0 && d > level;   // is depth d cut off by the level switch?
+  // a lone top-level bullet is just the title — a mode showing only that is
+  // pointless, so the switch starts at 2 unless the top level has siblings
+  const minLevel = () => tree.children.length === 1 ? 2 : 1;
   function applyLevel(depth) {{
     const n = level > 0 && level < depth ? level : 0;   // 0 = nothing cut
     if (!n) {{ levelCss.textContent = ''; return; }}
@@ -556,6 +559,7 @@ PAGE = """<!DOCTYPE html>
       cut + '.numbered .caret::before {{ display:none; }}';
   }}
   function showLevels(n, remember = true) {{
+    n = Math.max(n, minLevel());
     level = n >= treeDepth() ? 0 : n;
     eachRow((li, d, branch) => {{ if (branch && d < n) li.classList.add('open'); }});
     if (remember) try {{ localStorage.setItem(LEVEL_KEY, level ? String(level) : 'all'); }} catch {{}}
@@ -564,11 +568,13 @@ PAGE = """<!DOCTYPE html>
   // rebuild the buttons when the depth changes, re-apply the cut, and
   // highlight the active mode (the last button when nothing is cut)
   function syncLevels() {{
-    const depth = treeDepth();
-    const want = depth > 1 ? depth : 0;          // a flat list has nothing to switch
-    if (levelBar.children.length !== want) {{
+    const depth = treeDepth(), min = minLevel();
+    if (level && level < min) level = min;
+    const want = depth > min ? depth - min + 1 : 0;   // nothing to switch below the minimum
+    if (levelBar.children.length !== want ||
+        (want && +levelBar.firstChild.dataset.level !== min)) {{
       levelBar.innerHTML = '';
-      for (let n = 1; n <= want; n++) {{
+      for (let n = min; n <= depth; n++) {{
         const b = document.createElement('button');
         b.type = 'button'; b.textContent = n; b.dataset.level = n;
         b.title = n === 1 ? 'show the top level only'
