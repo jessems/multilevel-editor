@@ -240,7 +240,7 @@ PAGE = """<!DOCTYPE html>
 
   /* ---------- header chrome (UI face, not reading face) ---------- */
   header {{ position:sticky; top:0; z-index:2; background:var(--bg);
-           border-bottom:1px solid var(--line); padding:10px 24px;
+           border-bottom:1px solid var(--line); padding:10px 56px 10px 24px;
            display:flex; flex-wrap:wrap; gap:8px 12px; align-items:baseline;
            font:13px/1.4 var(--sans); }}
   header h1 {{ font:600 15px/1.4 var(--serif); margin:0; letter-spacing:-0.005em; }}
@@ -351,7 +351,8 @@ PAGE = """<!DOCTYPE html>
   body.readonly .creac.empty {{ display:none; }}
 
   /* ---------- settings sidebar (opened from the top-right cog) ---------- */
-  #menuBtn {{ width:30px; padding:5px 0; }}
+  /* pinned to the header corner — flex-wrap must never carry it to the left */
+  #menuBtn {{ width:30px; padding:5px 0; position:absolute; top:9px; right:14px; }}
   #menuBtn::before {{ content:''; display:inline-block; width:15px; height:15px;
     vertical-align:middle; background:currentColor;
     -webkit-mask:var(--icon) center/contain no-repeat;
