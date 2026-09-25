@@ -957,7 +957,7 @@ PAGE = """<!DOCTYPE html>
   const newLeafNestError = parentLi =>
     !parentLi || headingLevel(parentLi) ? null : 'no indentation beyond paragraph level';
   tree.addEventListener('mousemove', e => {{
-    if (!EDITABLE || dragLi) {{ hideInsert(); return; }}
+    if (!EDITABLE || dragLi || e.buttons) {{ hideInsert(); return; }}   // no hint mid-press/drag
     // editing a bullet does NOT suppress the hint: the plus stays reachable, and
     // its mousedown blurs (stages) the open edit before the new bullet opens
     const row = e.target.closest('.row');
@@ -1060,27 +1060,48 @@ PAGE = """<!DOCTYPE html>
     if (dragLi) dragLi.classList.remove('dragging');
     dragLi = null; clearMarks();
   }});
-  tree.addEventListener('dragover', e => {{
-    const row = e.target.closest('.row');
-    if (!row || !dragLi) return;
+  // The drop target is resolved by HEIGHT, not by what is under the pointer:
+  // the row the pointer is over, else the nearest visible row by vertical
+  // distance (within a small band). So a drag released in the indent gutter or
+  // the page margin, level with a row, still lands beside that row — and the
+  // handlers sit on document so the margins outside #tree count too.
+  const DROP_SNAP = 40;
+  function dropRowAt(e) {{
+    const direct = e.target instanceof Element && e.target.closest('.row');
+    if (direct && tree.contains(direct)) return direct;
+    let best = null, bestD = Infinity;
+    for (const r of tree.querySelectorAll('.row')) {{
+      if (r.offsetParent === null) continue;
+      const b = r.getBoundingClientRect();
+      const d = e.clientY < b.top ? b.top - e.clientY : e.clientY > b.bottom ? e.clientY - b.bottom : 0;
+      if (d < bestD) {{ bestD = d; best = r; }}
+    }}
+    return bestD <= DROP_SNAP ? best : null;
+  }}
+  document.addEventListener('dragover', e => {{
+    if (!dragLi) return;
+    const row = dropRowAt(e);
+    if (!row) {{ clearMarks(); return; }}
     const li = row.closest('li');
-    if (li === dragLi || dragLi.contains(li)) return;
-    if (nestError(dragLi, parentLiOf(li))) return;   // drop target breaks nesting rules
+    if (li === dragLi || dragLi.contains(li)) {{ clearMarks(); return; }}
+    if (nestError(dragLi, parentLiOf(li))) {{ clearMarks(); return; }}   // breaks nesting rules
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     clearMarks();
     const r = row.getBoundingClientRect();
     row.classList.add(e.clientY < r.top + r.height / 2 ? 'drop-before' : 'drop-after');
   }});
-  tree.addEventListener('drop', e => {{
-    const row = e.target.closest('.row');
-    if (!row || !dragLi) return;
+  document.addEventListener('drop', e => {{
+    if (!dragLi) return;
+    const row = dropRowAt(e);
+    if (!row) return;
     const li = row.closest('li');
     if (li === dragLi || dragLi.contains(li)) return;
     const err = nestError(dragLi, parentLiOf(li));
     if (err) {{ flash(err, 'error'); return; }}
     e.preventDefault();
-    const where = row.classList.contains('drop-before') ? 'before' : 'after';
+    const r = row.getBoundingClientRect();
+    const where = e.clientY < r.top + r.height / 2 ? 'before' : 'after';
     clearMarks();
     const before = posOf(dragLi);
     if (where === 'before') li.before(dragLi); else li.after(dragLi);

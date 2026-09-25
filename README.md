@@ -36,7 +36,9 @@ back to the `.md` only when you press **Save**.
 - **Tab / Shift+Tab while editing** — indent under the previous sibling /
   outdent to after the parent, subtree included, caret preserved.
 - **Drag to move** — a grip appears on hover; dragging moves the bullet with
-  its whole subtree, with a drop indicator above/below the target.
+  its whole subtree, with a drop indicator above/below the target. The target
+  is picked by height: releasing in the indent gutter or the page margin,
+  level with a row, drops beside that row.
 - **Insert between** — hovering the boundary between two bullets shows a line
   with a plus; clicking it creates a new bullet there and opens it for
   editing. Leaving it empty (or Esc) cancels the insert. The hint also works
