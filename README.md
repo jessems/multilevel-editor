@@ -50,12 +50,23 @@ back to the `.md` only when you press **Save**.
   bullet (and not themselves headings or `[bracketed placeholders]`) get a
   small sequential number chip. Numbers are **computed by the UI, never stored
   in the file**, and recompute live on every reorder.
-- **CREAC role badges** (Neumann's shorthand) — a one-letter badge before the
-  paragraph number marks the paragraph's role: **C**onclusion, **R**ule,
-  **E**xplanation, **A**pplication. Clicking the badge (or the faint circle
-  that appears on hover) cycles C → R → E → A → unset. Roles are stored in the
-  file as a trailing ` {R}` tag on the bullet's line — visible in the markdown
-  view, stripped from the rendered text.
+- **Paragraph role tagging** — a one-letter badge before the paragraph number
+  marks the paragraph's argumentative role; clicking it (or the faint circle
+  that appears on hover) cycles through the active scheme's letters and back
+  to unset, with a black tooltip naming each role. Toggle tagging and pick the
+  scheme in the **settings sidebar** (☰, top right; persisted in
+  localStorage):
+  - **CREAC** (Neumann) — **C**onclusion · **R**ule · **E**xplanation ·
+    **A**pplication
+  - **Syllogism** (Scalia & Garner) — **M**ajor premise (the rule) ·
+    **m**inor premise (the facts) · **C**onclusion
+  - **Subsumtion** (Gutachtenstil) — **O**bersatz · **D**efinition ·
+    **S**ubsumtion · **E**rgebnis
+
+  Roles are stored in the file as a trailing ` {R}` tag on the bullet's line —
+  visible in the markdown view, stripped from the rendered text. Badge hues
+  follow the letter's position in the scheme; a letter not in the active
+  scheme renders muted, and clicking it retags into the current scheme.
 - **Nesting rules** — nothing can be nested under a non-heading bullet via
   the tree view (paragraphs are the deepest level an operation may create),
   and a heading can only be moved under a heading of a shallower level, so a
