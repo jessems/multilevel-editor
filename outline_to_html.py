@@ -264,6 +264,13 @@ PAGE = """<!DOCTYPE html>
   .levels-row:has(#levels:empty), body.mdmode .levels-row {{ display:none; }}
   #levels {{ display:inline-flex; align-items:stretch; border:1px solid var(--line);
              border-radius:6px; overflow:hidden; }}
+  li.lvhide {{ display:none !important; }}                 /* below the chosen level */
+  li.lvhide[data-pending-new], li.lvhide:has(> .row .txt[contenteditable="true"]) {{
+    display:list-item !important; }}                       /* …but never while being edited */
+  li.lvcut > .row .caret {{ pointer-events:none; }}         /* all children hidden: a leaf dot */
+  li.lvcut > .row .caret::before {{ width:5px; height:5px; border:0; border-radius:50%;
+    background:var(--mut); opacity:.75; transform:none; position:relative; top:-1px; }}
+  li.lvcut > .row.numbered .caret::before {{ display:none; }}
   #levels button {{ border:none; border-radius:0; padding:6px 10px; min-width:30px; }}
   #levels button + button {{ border-left:1px solid var(--line); }}
   #levels button:hover {{ background:var(--hover); }}
@@ -509,20 +516,23 @@ PAGE = """<!DOCTYPE html>
   const status = document.getElementById('status');
   const saveBtn = document.getElementById('saveBtn');
 
-  // ---- level switch: one mode per depth the outline uses ----
-  // Mode N shows the top N levels and REMOVES everything deeper from view
-  // (a generated stylesheet hides the sub-lists below level N and turns the
-  // carets at level N into leaf dots), independent of the carets' own
-  // open/closed state. Picking N also opens every branch shallower than N,
-  // so the top N levels are all actually on screen. The last mode (N =
-  // deepest level) hides nothing. Buttons are rebuilt whenever the depth
-  // changes (renumberChips runs after every structural change) and the
-  // choice is remembered per file, so the reload after Save comes back at
-  // the same depth. Editing never lands a bullet in a hidden level.
+  // ---- level switch: one mode per heading level, plus the paragraph level ----
+  // A bullet's level is its heading level (#, ##, ### → 1, 2, 3); every
+  // non-heading bullet sits at the PARAGRAPH level, one below the deepest
+  // heading used, wherever it is nested. (An outline with no headings at all
+  // falls back to nesting depth.) Mode N shows the bullets of level ≤ N and
+  // REMOVES the rest from view — a branch whose children are all hidden
+  // renders with a leaf dot instead of a caret — independent of the carets'
+  // own open/closed state. Picking N opens every branch shallower than N, so
+  // everything up to level N is actually on screen; the highest mode is the
+  // paragraph level and hides nothing. Mode 1 is omitted when only one
+  // bullet lives at level 1 (a lone title). Buttons are rebuilt after every
+  // structural change (renumberChips) and the choice is remembered per file,
+  // so the reload after Save comes back at the same level. A bullet being
+  // edited is always shown; once staged, it follows its level.
   const levelBar = document.getElementById('levels');
-  const levelCss = document.head.appendChild(document.createElement('style'));
   const LEVEL_KEY = 'multilevel-editor.level:' + SOURCE;
-  let level = 0;                               // 0 = all levels; N = show the top N only
+  let level = 0;                               // 0 = everything; N = levels 1..N only
   function eachRow(fn) {{                      // fn(li, depth, hasChildren), depth from 1
     (function walk(ul, d) {{
       [...ul.children].forEach(li => {{
@@ -532,59 +542,55 @@ PAGE = """<!DOCTYPE html>
       }});
     }})(tree, 1);
   }}
-  function treeDepth() {{
+  function levelRows() {{                      // [{{li, branch, lvl}}], max level, deepest heading
+    const rows = [];
+    let H = 0;
+    eachRow((li, d, branch) => {{
+      const raw = li.querySelector(':scope > .row .txt').dataset.raw;
+      const m = /^(#{{1,6}})\\s/.exec(raw);
+      const h = m ? m[1].length : 0;
+      if (h > H) H = h;
+      rows.push({{ li, d, branch, h }});
+    }});
     let max = 0;
-    eachRow((li, d) => {{ if (d > max) max = d; }});
-    return max;
+    rows.forEach(r => {{
+      r.lvl = r.h || (H ? H + 1 : r.d);
+      if (r.lvl > max) max = r.lvl;
+    }});
+    return {{ rows, max, H }};
   }}
-  function depthOf(li) {{
-    let d = 1;
-    for (let ul = li.parentElement; ul !== tree; ul = ul.parentElement.parentElement) d++;
-    return d;
-  }}
-  const hiddenAt = d => level > 0 && d > level;   // is depth d cut off by the level switch?
-  // a lone top-level bullet is just the title — a mode showing only that is
-  // pointless, so the switch starts at 2 unless the top level has siblings
-  const minLevel = () => tree.children.length === 1 ? 2 : 1;
-  function applyLevel(depth) {{
-    const n = level > 0 && level < depth ? level : 0;   // 0 = nothing cut
-    if (!n) {{ levelCss.textContent = ''; return; }}
-    const sub = '#tree' + ' > li > ul'.repeat(n);        // the list holding level n+1
-    const cut = '#tree' + ' > li > ul'.repeat(n - 1) + ' > li > .row';   // rows at level n
-    levelCss.textContent =
-      sub + ' {{ display:none !important; }}\\n' +
-      cut + ' .caret {{ pointer-events:none; }}\\n' +
-      cut + ' .caret::before {{ width:5px; height:5px; border:0; border-radius:50%; ' +
-        'background:var(--mut); opacity:.75; transform:none; position:relative; top:-1px; }}\\n' +
-      cut + '.numbered .caret::before {{ display:none; }}';
-  }}
+  const minLevel = rows => rows.filter(r => r.lvl <= 1).length === 1 ? 2 : 1;
   function showLevels(n, remember = true) {{
-    n = Math.max(n, minLevel());
-    level = n >= treeDepth() ? 0 : n;
-    eachRow((li, d, branch) => {{ if (branch && d < n) li.classList.add('open'); }});
+    const {{ rows, max }} = levelRows();
+    n = Math.max(n, minLevel(rows));
+    level = n >= max ? 0 : n;
+    rows.forEach(r => {{ if (r.branch && r.lvl < n) r.li.classList.add('open'); }});
     if (remember) try {{ localStorage.setItem(LEVEL_KEY, level ? String(level) : 'all'); }} catch {{}}
     syncLevels();
   }}
-  // rebuild the buttons when the depth changes, re-apply the cut, and
+  // rebuild the buttons when the levels change, re-apply the cut, and
   // highlight the active mode (the last button when nothing is cut)
   function syncLevels() {{
-    const depth = treeDepth(), min = minLevel();
+    const {{ rows, max, H }} = levelRows();
+    const min = minLevel(rows);
     if (level && level < min) level = min;
-    const want = depth > min ? depth - min + 1 : 0;   // nothing to switch below the minimum
+    const want = max > min ? max - min + 1 : 0;   // nothing to switch below the minimum
     if (levelBar.children.length !== want ||
         (want && +levelBar.firstChild.dataset.level !== min)) {{
       levelBar.innerHTML = '';
-      for (let n = min; n <= depth; n++) {{
+      for (let n = min; n <= max; n++) {{
         const b = document.createElement('button');
         b.type = 'button'; b.textContent = n; b.dataset.level = n;
-        b.title = n === 1 ? 'show the top level only'
-                : n === depth ? 'show all ' + depth + ' levels'
-                : 'show the top ' + n + ' levels';
+        b.title = n === max ? (H ? 'show everything, paragraphs included' : 'show all levels')
+                : H ? 'show headings down to level ' + n : 'show the top ' + n + ' levels';
         levelBar.appendChild(b);
       }}
     }}
-    applyLevel(depth);
-    const active = level > 0 && level < depth ? level : depth;
+    const cut = level > 0 && level < max ? level : 0;
+    rows.forEach(r => r.li.classList.toggle('lvhide', cut > 0 && r.lvl > cut));
+    rows.forEach(r => r.li.classList.toggle('lvcut', r.branch &&
+      [...r.li.querySelector(':scope > ul').children].every(c => c.classList.contains('lvhide'))));
+    const active = cut || max;
     [...levelBar.children].forEach(b => b.classList.toggle('on', +b.dataset.level === active));
   }}
   levelBar.addEventListener('click', e => {{
@@ -594,7 +600,7 @@ PAGE = """<!DOCTYPE html>
   {{
     let stored = null;
     try {{ stored = localStorage.getItem(LEVEL_KEY); }} catch {{}}
-    if (stored === 'all') showLevels(treeDepth(), false);
+    if (stored === 'all') showLevels(99, false);
     else if (parseInt(stored, 10) > 0) showLevels(parseInt(stored, 10), false);
     else syncLevels();
   }}
@@ -995,6 +1001,8 @@ PAGE = """<!DOCTYPE html>
         flash('inserted · ⌘Z to undo');
       }}
       renumberChips();                              // heading-ness may have changed
+      if (liEl && liEl.classList.contains('lvhide'))
+        flash('staged, but hidden at this level — the last level shows paragraphs', 'error');
       markDirty();
     }};
     const indentOutdent = out => {{
@@ -1008,8 +1016,6 @@ PAGE = """<!DOCTYPE html>
         const prevLi = li.previousElementSibling;
         const err = prevLi && nestError(li, prevLi);
         if (!prevLi) {{ flash('cannot indent further', 'error'); }}
-        else if (hiddenAt(depthOf(li) + 1)) {{
-          flash('level ' + (depthOf(li) + 1) + ' is hidden — pick a deeper level first', 'error'); }}
         else if (err) {{ flash(err, 'error'); }}
         else {{
           toBranch(prevLi);
@@ -1109,8 +1115,7 @@ PAGE = """<!DOCTYPE html>
   // child of an open branch (when nesting allows), else the next sibling.
   function spawnBelow(li) {{
     const nb = freshBullet();
-    if (li.classList.contains('branch') && li.classList.contains('open') &&
-        !hiddenAt(depthOf(li) + 1) && !newLeafNestError(li)) {{
+    if (li.classList.contains('branch') && li.classList.contains('open') && !newLeafNestError(li)) {{
       li.querySelector(':scope > ul').prepend(nb);
     }} else if (!newLeafNestError(parentLiOf(li))) {{
       li.after(nb);
