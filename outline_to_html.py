@@ -39,20 +39,72 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 BULLET_RE = re.compile(r"^(\s*)- (.*)$")
-# Paragraph role tag: a trailing ' {X}' (one letter, case-sensitive) on the
-# bullet's line — stored in the file, stripped from the rendered text, shown
-# as a one-letter badge before the paragraph number. The letter's meaning
-# comes from the tagging scheme chosen in the settings sidebar (CREAC,
-# Syllogism, Subsumtion); the server renders with the CREAC default and the
-# client reinterprets per the user's stored settings at load.
+# Paragraph role tags live in a sidecar metadata document, NOT in the outline:
+# <outline>.tags.yaml maps a content fingerprint (sha256[:8] of the bullet's
+# text) to a one-letter role, with the paragraph quoted in a comment for human
+# readers. The sidecar also records the tagging scheme (creac / syllogism /
+# subsumtion) so the letters are self-describing. The editor re-keys the whole
+# sidecar on every save, so reorders and in-editor edits keep tags attached;
+# a bullet edited outside the editor orphans its tag (reported, dropped on the
+# next save). Legacy inline ' {X}' tags in the outline are migrated to the
+# sidecar on the next save. The markdown view projects tags inline as ' {X}'
+# for bulk editing; the file on disk stays clean.
 TAG_RE = re.compile(r"^(.*?)\s*\{([A-Za-z])\}\s*$", re.S)
 DEFAULT_TITLES = {"C": "Conclusion", "R": "Rule", "E": "Explanation", "A": "Application"}
 DEFAULT_POS = {"C": 1, "R": 2, "E": 3, "A": 4}
+SCHEME_NAMES = ("creac", "syllogism", "subsumtion")
 
 
 def split_tag(raw: str):
     m = TAG_RE.match(raw)
     return (m.group(1), m.group(2)) if m else (raw, None)
+
+
+def fingerprint(text: str) -> str:
+    return hashlib.sha256(text.strip().encode("utf-8")).hexdigest()[:8]
+
+
+def tags_path(source: Path) -> Path:
+    return source.with_suffix(".tags.yaml")
+
+
+def load_meta(source: Path):
+    """Parse the sidecar (a deliberately flat YAML subset: 'scheme:' plus
+    'hash: letter' entries under 'tags:'; comments ignored)."""
+    meta = {"scheme": "creac", "tags": {}}
+    p = tags_path(source)
+    if not p.exists():
+        return meta
+    for line in p.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"^scheme:\s*(\w+)", line)
+        if m and m.group(1) in SCHEME_NAMES:
+            meta["scheme"] = m.group(1)
+            continue
+        m = re.match(r"^\s+([0-9a-f]{8}):\s*([A-Za-z])\b", line)
+        if m:
+            meta["tags"][m.group(1)] = m.group(2)
+    return meta
+
+
+def write_meta(source: Path, scheme: str, tagged):
+    """Rewrite the sidecar from live state: tagged = [(clean_text, letter)].
+    No tags and the default scheme -> remove the sidecar entirely."""
+    p = tags_path(source)
+    if not tagged and scheme == "creac":
+        p.unlink(missing_ok=True)
+        return
+    lines = [
+        "# paragraph roles for " + source.name + " — maintained by multilevel-editor",
+        "# keys are sha256[:8] of the bullet text; quotes are regenerated on save",
+        f"scheme: {scheme}",
+        "tags:",
+    ]
+    for text, letter in tagged:
+        quote = " ".join(text.split())
+        if len(quote) > 48:
+            quote = quote[:48] + "…"
+        lines.append(f"  {fingerprint(text)}: {letter}   # {quote}")
+    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def parse_outline(text: str):
@@ -120,8 +172,8 @@ def render_inline(text: str):
 
 
 def render_node(node) -> str:
-    disp, letter = split_tag(node["raw"])
-    text, heading = render_inline(disp)
+    letter = node.get("tag")
+    text, heading = render_inline(node["raw"])
     cls = f"h{heading}" if heading else "item"
     numbered = bool(node.get("num"))
     if letter:
@@ -138,7 +190,8 @@ def render_node(node) -> str:
     grip = '<span class="grip" draggable="true" title="drag to move">⋮⋮</span>'
     span = (
         f'{chip}<span class="txt {cls}" '
-        f'data-raw="{html.escape(node["raw"], quote=True)}">{text}</span></div>'
+        f'data-raw="{html.escape(node["raw"], quote=True)}" '
+        f'data-tag="{letter or ""}">{text}</span></div>'
         f'<span class="act"><button class="del" type="button" title="delete bullet" aria-label="delete bullet"></button></span>'
     )
     if node["children"]:
@@ -426,6 +479,8 @@ PAGE = """<!DOCTYPE html>
 <script>
   const EDITABLE = {editable};
   const FILEHASH = "{filehash}";
+  const SCHEME = "{scheme}";
+  const ORPHANS = {orphans};
   const tree = document.getElementById('tree');
   const mdview = document.getElementById('mdview');
   const mdBtn = document.getElementById('mdBtn');
@@ -467,12 +522,18 @@ PAGE = """<!DOCTYPE html>
                       S: 'Subsumtion — the facts applied to the elements',
                       E: 'Ergebnis — the result'}} }},
   }};
-  const settings = {{ tagging: true, scheme: 'creac' }};
-  try {{ Object.assign(settings, JSON.parse(localStorage.getItem('multilevel-editor.settings') || '{{}}')); }} catch {{}}
-  if (!SCHEMES[settings.scheme]) settings.scheme = 'creac';
+  // the scheme is DOCUMENT metadata (persisted in the sidecar on Save);
+  // only the tagging display toggle is a browser preference
+  const settings = {{ tagging: true, scheme: SCHEMES[SCHEME] ? SCHEME : 'creac' }};
+  try {{
+    const stored = JSON.parse(localStorage.getItem('multilevel-editor.settings') || '{{}}');
+    if (typeof stored.tagging === 'boolean') settings.tagging = stored.tagging;
+  }} catch {{}}
   function saveSettings() {{
-    try {{ localStorage.setItem('multilevel-editor.settings', JSON.stringify(settings)); }} catch {{}}
+    try {{ localStorage.setItem('multilevel-editor.settings',
+      JSON.stringify({{ tagging: settings.tagging }})); }} catch {{}}
   }}
+  // trailing ' {{X}}' — the markdown view's inline projection of a tag
   function splitTag(raw) {{
     const m = raw.match(/^([\\s\\S]*?)\\s*\\{{([A-Za-z])\\}}\\s*$/);
     return m ? {{text: m[1], letter: m[2]}} : {{text: raw, letter: null}};
@@ -481,13 +542,13 @@ PAGE = """<!DOCTYPE html>
     const span = badge.closest('.main').querySelector('.txt');
     if (span.isContentEditable) return;
     const sch = SCHEMES[settings.scheme];
-    const cur = splitTag(span.dataset.raw);
-    const i = cur.letter === null ? -1 : sch.letters.indexOf(cur.letter);
+    const cur = span.dataset.tag || null;
+    const i = cur === null ? -1 : sch.letters.indexOf(cur);
     // unknown letter (from another scheme) restarts the cycle at this scheme's first letter
     const next = i === -1 ? sch.letters[0]
                : i === sch.letters.length - 1 ? null
                : sch.letters[i + 1];
-    span.dataset.raw = next ? cur.text + ' {{' + next + '}}' : cur.text;
+    span.dataset.tag = next || '';
     renumberChips();
     markDirty();
   }}
@@ -511,22 +572,30 @@ PAGE = """<!DOCTYPE html>
     (function walk(ul, depth) {{
       [...ul.children].forEach(li => {{
         const span = li.querySelector(':scope > .row .txt');
-        if (span) bullets.push({{ indent: depth, raw: span.dataset.raw }});
+        if (span) bullets.push({{ indent: depth, raw: span.dataset.raw,
+                                 tag: span.dataset.tag || null }});
         const sub = li.querySelector(':scope > ul');
         if (sub) walk(sub, depth + 1);
       }});
     }})(tree, 0);
     return bullets;
   }}
+  // the markdown view is the full-fidelity projection: tags appear inline as
+  // ' {{X}}' there (and only there — the file on disk stays clean)
   function toMarkdown(bullets) {{
-    return bullets.map(b => '  '.repeat(b.indent) + '- ' + b.raw).join('\\n');
+    return bullets.map(b => '  '.repeat(b.indent) + '- ' + b.raw +
+                            (b.tag ? ' {{' + b.tag + '}}' : '')).join('\\n');
   }}
   function parseMarkdown(text) {{
     const bullets = [];
     text.split('\\n').forEach(line => {{
       const m = line.match(/^(\\s*)- (.*)$/);
-      if (m) bullets.push({{ indent: Math.floor(m[1].length / 2), raw: m[2].trim() }});
-      else if (line.trim() && bullets.length) bullets[bullets.length - 1].raw += ' ' + line.trim();
+      if (m) {{
+        const st = splitTag(m[2].trim());
+        bullets.push({{ indent: Math.floor(m[1].length / 2), raw: st.text.trim(), tag: st.letter }});
+      }} else if (line.trim() && bullets.length) {{
+        bullets[bullets.length - 1].raw += ' ' + line.trim();
+      }}
     }});
     return bullets;
   }}
@@ -535,15 +604,16 @@ PAGE = """<!DOCTYPE html>
     const root = {{ indent: -1, children: [] }};
     const stack = [root];
     bullets.forEach(b => {{
-      const node = {{ indent: b.indent, raw: b.raw, children: [] }};
+      const node = {{ indent: b.indent, raw: b.raw, tag: b.tag || null, children: [] }};
       while (stack[stack.length - 1].indent >= b.indent) stack.pop();
       stack[stack.length - 1].children.push(node);
       stack.push(node);
     }});
     function renderNode(n) {{
-      const d = renderMd(splitTag(n.raw).text);
+      const d = renderMd(n.raw);
       const grip = '<span class="grip" draggable="true" title="drag to move">⋮⋮</span>';
-      const span = '<span class="txt ' + d.cls + '" data-raw="' + esc(n.raw) + '">' + d.html + '</span></div>' +
+      const span = '<span class="txt ' + d.cls + '" data-raw="' + esc(n.raw) +
+                   '" data-tag="' + esc(n.tag || '') + '">' + d.html + '</span></div>' +
                    '<span class="act"><button class="del" type="button" title="delete bullet" aria-label="delete bullet"></button></span>';
       if (n.children.length) {{
         return '<li class="branch open"><div class="row"><div class="main">' + grip +
@@ -586,7 +656,7 @@ PAGE = """<!DOCTYPE html>
           span.closest('.row').classList.toggle('numbered', numbered);
           // role badge sits before the number chip: a letter when tagged,
           // an empty click target on numbered rows, nothing otherwise
-          const letter = splitTag(raw).letter;
+          const letter = span.dataset.tag || null;
           let badge = li.querySelector(':scope > .row > .main > .creac');
           if (letter || numbered) {{
             if (!badge) {{
@@ -801,9 +871,12 @@ PAGE = """<!DOCTYPE html>
       if (done) return;
       const val = span.textContent.replace(/\\n+/g, ' ').trim();
       if (!val || val === span.dataset.raw) {{ cancel(); return; }}
-      span.dataset.raw = val;
+      // a trailing ' {{X}}' typed inline becomes the bullet's tag
+      const st = splitTag(val);
+      span.dataset.raw = st.text.trim();
+      if (st.letter) span.dataset.tag = st.letter;
       cleanup();
-      const d = renderMd(splitTag(val).text);
+      const d = renderMd(span.dataset.raw);
       span.innerHTML = d.html;
       span.className = 'txt ' + d.cls;
       const liEl = span.closest('li');
@@ -1018,9 +1091,12 @@ PAGE = """<!DOCTYPE html>
   }});
   document.querySelectorAll('input[name="scheme"]').forEach(r =>
     r.addEventListener('change', () => {{
-      if (r.checked) {{ settings.scheme = r.value; saveSettings(); applySettings(); }}
+      // scheme is document metadata: staged now, written to the sidecar on Save
+      if (r.checked) {{ settings.scheme = r.value; applySettings(); markDirty(); }}
     }}));
-  applySettings();   // reinterpret server-rendered badges per stored settings
+  applySettings();   // reinterpret server-rendered badges per settings
+  if (ORPHANS) flash(ORPHANS + ' orphaned tag' + (ORPHANS > 1 ? 's' : '') +
+                     ' in the sidecar (paragraph text changed) — dropped on next save', 'error');
 
   // Save — serialize current view and write the whole file
   async function doSave() {{
@@ -1037,7 +1113,7 @@ PAGE = """<!DOCTYPE html>
     try {{
       const r = await fetch('/save', {{ method: 'POST',
         headers: {{'Content-Type': 'application/json'}},
-        body: JSON.stringify({{ hash: FILEHASH, bullets }}) }});
+        body: JSON.stringify({{ hash: FILEHASH, scheme: settings.scheme, bullets }}) }});
       if (!r.ok) throw new Error((await r.json()).error || r.status);
       dirty = false;
       location.reload();
@@ -1056,15 +1132,37 @@ PAGE = """<!DOCTYPE html>
 """
 
 
-def file_hash(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+def combined_hash(source: Path) -> str:
+    """Conflict guard spans the outline AND its sidecar."""
+    text = source.read_text(encoding="utf-8")
+    side = tags_path(source)
+    sidecar = side.read_text(encoding="utf-8") if side.exists() else ""
+    return hashlib.sha256((text + "\0" + sidecar).encode("utf-8")).hexdigest()
 
 
 def build_page(source: Path, editable: bool) -> str:
     text = source.read_text(encoding="utf-8")
+    meta = load_meta(source)
     tree = parse_outline(text)
     if not tree:
         sys.exit(f"error: no '- ' bullets found in {source}")
+
+    used = set()
+
+    def attach(nodes):
+        for n in nodes:
+            clean, inline = split_tag(n["raw"])
+            n["raw"] = clean.strip()
+            fp = fingerprint(n["raw"])
+            if fp in meta["tags"]:
+                n["tag"] = meta["tags"][fp]
+                used.add(fp)
+            else:
+                n["tag"] = inline   # legacy inline tag — migrates to the sidecar on save
+            attach(n["children"])
+
+    attach(tree)
+    orphans = sum(1 for k in meta["tags"] if k not in used)
     assign_numbers(tree)
     body = "\n".join(render_node(n) for n in tree)
     return PAGE.format(
@@ -1073,7 +1171,9 @@ def build_page(source: Path, editable: bool) -> str:
         tree=body,
         editable="true" if editable else "false",
         bodycls="" if editable else "readonly",
-        filehash=file_hash(text),
+        filehash=combined_hash(source),
+        scheme=meta["scheme"],
+        orphans=orphans,
         hint="click to edit · Enter adds a bullet below · drag to move · hover between bullets to insert · letter badge tags the paragraph role · trash to delete · ⌘Z undoes · Markdown for raw view · Save (⌘S) writes to the .md"
         if editable else "",
     )
@@ -1101,12 +1201,12 @@ def serve(source: Path, port: int):
                 return
             try:
                 req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-                current = source.read_text(encoding="utf-8")
-                if file_hash(current) != req["hash"]:
+                if combined_hash(source) != req["hash"]:
                     self._send(409, json.dumps(
                         {"error": "file changed on disk — refresh the page (your staged edits will be lost)"}),
                         "application/json")
                     return
+                current = source.read_text(encoding="utf-8")
                 cur_lines = current.splitlines(keepends=True)
                 fm = []
                 if cur_lines and cur_lines[0].strip() == "---":
@@ -1115,12 +1215,20 @@ def serve(source: Path, port: int):
                         fm.append(line)
                         if line.strip() == "---":
                             break
-                bullets = ["  " * b["indent"] + "- " + b["raw"].strip()
-                           for b in req["bullets"]]
-                out = "".join(fm) + ("\n" if fm else "") + "\n".join(bullets) + "\n"
+                lines, tagged = [], []
+                for b in req["bullets"]:
+                    clean = split_tag(b["raw"].strip())[0].strip()   # belt & braces: outline stays tag-free
+                    lines.append("  " * b["indent"] + "- " + clean)
+                    if b.get("tag"):
+                        tagged.append((clean, b["tag"]))
+                scheme = req.get("scheme")
+                if scheme not in SCHEME_NAMES:
+                    scheme = "creac"
+                out = "".join(fm) + ("\n" if fm else "") + "\n".join(lines) + "\n"
                 source.write_text(out, encoding="utf-8")
+                write_meta(source, scheme, tagged)
                 self._send(200, json.dumps({"ok": True}), "application/json")
-                print(f"  saved: {len(bullets)} bullets written")
+                print(f"  saved: {len(lines)} bullets, {len(tagged)} tags -> {tags_path(source).name}")
             except Exception as e:  # noqa: BLE001 — report any save failure to the client
                 self._send(400, json.dumps({"error": str(e)}), "application/json")
 

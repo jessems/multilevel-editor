@@ -63,10 +63,25 @@ back to the `.md` only when you press **Save**.
   - **Subsumtion** (Gutachtenstil) — **O**bersatz · **D**efinition ·
     **S**ubsumtion · **E**rgebnis
 
-  Roles are stored in the file as a trailing ` {R}` tag on the bullet's line —
-  visible in the markdown view, stripped from the rendered text. Badge hues
-  follow the letter's position in the scheme; a letter not in the active
-  scheme renders muted, and clicking it retags into the current scheme.
+  Roles live in a **sidecar metadata document**, `<outline>.tags.yaml`, keyed
+  by a content fingerprint (sha256[:8]) of each bullet's text and carrying the
+  paragraph quote as a comment — the outline itself stays clean:
+
+  ```yaml
+  # paragraph roles for outline.md — maintained by multilevel-editor
+  scheme: creac
+  tags:
+    8f3a21c4: R   # "The two companies are separate legal…"
+  ```
+
+  The sidecar (including the scheme, which is document metadata) is rewritten
+  on every save, so reorders and in-editor edits keep tags attached; a bullet
+  edited *outside* the editor orphans its tag (reported on load, dropped on
+  the next save). The markdown view projects tags inline as ` {X}` for bulk
+  editing, and legacy inline tags in old files migrate to the sidecar on the
+  first save. Badge hues follow the letter's position in the scheme; a letter
+  not in the active scheme renders muted, and clicking it retags into the
+  current scheme.
 - **Nesting rules** — nothing can be nested under a non-heading bullet via
   the tree view (paragraphs are the deepest level an operation may create),
   and a heading can only be moved under a heading of a shallower level, so a
