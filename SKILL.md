@@ -57,8 +57,10 @@ warning. Save serializes the whole outline from the page and rewrites the
   adding, deleting, and re-indenting bullets — then toggle back to Outline
   (the tree rebuilds, chips recompute) or Save directly. Only the outline body
   is shown; frontmatter stays untouched.
-- **Collapse/expand** via the caret on branch bullets; Expand-all /
-  Collapse-all in the header. Text selection inside a bullet triggers edit
+- **Collapse/expand** via the caret on branch bullets; the header's **level
+  switch** has one mode per depth the outline uses (`1` = top level only, …,
+  deepest = everything), remembered per file across reloads. Text selection
+  inside a bullet triggers edit
   mode — Esc backs out without saving.
 - **Conflict safety**: the page carries a hash of the file it was built from;
   if the file changed on disk in the meantime, Save is refused (409) rather

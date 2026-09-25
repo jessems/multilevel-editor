@@ -255,6 +255,15 @@ PAGE = """<!DOCTYPE html>
   #saveBtn:disabled {{ opacity:.45; cursor:default; }}
   #saveBtn.dirty {{ background:var(--acc); color:var(--bg); border-color:var(--acc); }}
   body.readonly #saveBtn, body.readonly #mdBtn {{ display:none; }}
+  /* level switch — one mode per depth the outline uses: N shows the top N levels */
+  #levels {{ display:inline-flex; align-items:stretch; border:1px solid var(--line);
+             border-radius:6px; overflow:hidden; }}
+  #levels:empty, body.mdmode #levels {{ display:none; }}
+  #levels button {{ border:none; border-radius:0; padding:6px 10px; min-width:30px; }}
+  #levels button + button {{ border-left:1px solid var(--line); }}
+  #levels button:hover {{ background:var(--hover); }}
+  #levels button.on {{ background:var(--acc); color:var(--bg); }}
+  #levels button:focus-visible {{ outline-offset:-2px; }}
   #status {{ font:12.5px var(--sans); color:var(--mut); min-width:60px; }}
   #status.saved {{ color:var(--ok); }}
   #status.error {{ color:var(--err); }}
@@ -456,8 +465,7 @@ PAGE = """<!DOCTYPE html>
 <header>
   <h1>{title}</h1>
   <span class="src">{source}</span>
-  <button onclick="setAll(true)">Expand all</button>
-  <button onclick="setAll(false)">Collapse all</button>
+  <span id="levels" role="group" aria-label="visible levels" title="visible levels"></span>
   <button id="mdBtn">Markdown</button>
   <span class="hint">{hint}</span>
   <span id="status"></span>
@@ -486,6 +494,7 @@ PAGE = """<!DOCTYPE html>
 <script>
   const EDITABLE = {editable};
   const FILEHASH = "{filehash}";
+  const SOURCE = {source_js};
   const SCHEME = "{scheme}";
   const ORPHANS = {orphans};
   const tree = document.getElementById('tree');
@@ -494,8 +503,65 @@ PAGE = """<!DOCTYPE html>
   const status = document.getElementById('status');
   const saveBtn = document.getElementById('saveBtn');
 
-  function setAll(open) {{
-    document.querySelectorAll('li.branch').forEach(li => li.classList.toggle('open', open));
+  // ---- level switch: one mode per depth the outline uses ----
+  // Mode N shows the top N levels: branches shallower than N are open, the
+  // rest closed. The last mode (N = deepest level) shows everything. The
+  // buttons are rebuilt whenever the depth changes (renumberChips runs after
+  // every structural change) and the chosen level is remembered per file, so
+  // the reload after Save comes back at the same depth.
+  const levelBar = document.getElementById('levels');
+  const LEVEL_KEY = 'multilevel-editor.level:' + SOURCE;
+  function eachRow(fn) {{                      // fn(li, depth, hasChildren), depth from 1
+    (function walk(ul, d) {{
+      [...ul.children].forEach(li => {{
+        const sub = li.querySelector(':scope > ul');
+        fn(li, d, !!sub);
+        if (sub) walk(sub, d + 1);
+      }});
+    }})(tree, 1);
+  }}
+  function treeDepth() {{
+    let max = 0;
+    eachRow((li, d) => {{ if (d > max) max = d; }});
+    return max;
+  }}
+  function showLevels(n, remember = true) {{
+    eachRow((li, d, branch) => {{ if (branch) li.classList.toggle('open', d < n); }});
+    if (remember) try {{ localStorage.setItem(LEVEL_KEY, String(n)); }} catch {{}}
+    syncLevels();
+  }}
+  // rebuild the buttons when the depth changes, then highlight the mode the
+  // current open/closed state matches — none after a manual caret toggle
+  function syncLevels() {{
+    const depth = treeDepth();
+    const want = depth > 1 ? depth : 0;          // a flat list has nothing to switch
+    if (levelBar.children.length !== want) {{
+      levelBar.innerHTML = '';
+      for (let n = 1; n <= want; n++) {{
+        const b = document.createElement('button');
+        b.type = 'button'; b.textContent = n; b.dataset.level = n;
+        b.title = n === 1 ? 'show the top level only'
+                : n === depth ? 'show all ' + depth + ' levels'
+                : 'show the top ' + n + ' levels';
+        levelBar.appendChild(b);
+      }}
+    }}
+    const match = new Array(depth + 1).fill(true);   // match[n]: state equals mode n
+    eachRow((li, d, branch) => {{
+      if (!branch) return;
+      const open = li.classList.contains('open');
+      for (let n = 1; n <= depth; n++) if (open !== (d < n)) match[n] = false;
+    }});
+    [...levelBar.children].forEach(b => b.classList.toggle('on', match[+b.dataset.level]));
+  }}
+  levelBar.addEventListener('click', e => {{
+    const b = e.target.closest('button');
+    if (b) showLevels(+b.dataset.level);
+  }});
+  {{
+    let n = 0;
+    try {{ n = parseInt(localStorage.getItem(LEVEL_KEY), 10) || 0; }} catch {{}}
+    if (n > 0) showLevels(Math.min(n, treeDepth()), false); else syncLevels();
   }}
   let flashTimer = null;
   function flash(msg, cls) {{
@@ -685,6 +751,7 @@ PAGE = """<!DOCTYPE html>
         if (sub) walk(sub, isHeading);
       }});
     }})(tree, true);
+    syncLevels();
   }}
 
   // nesting rules — returns an error message, or null when `li` may become a
@@ -842,7 +909,7 @@ PAGE = """<!DOCTYPE html>
   // ---- delegated events (survive tree rebuilds) ----
   tree.addEventListener('click', e => {{
     const caret = e.target.closest('.caret');
-    if (caret) {{ caret.closest('li').classList.toggle('open'); return; }}
+    if (caret) {{ caret.closest('li').classList.toggle('open'); syncLevels(); return; }}
     const badge = e.target.closest('.creac');
     if (badge) {{ if (EDITABLE) cycleTag(badge); return; }}
     const del = e.target.closest('.del');
@@ -1217,6 +1284,7 @@ def build_page(source: Path, editable: bool) -> str:
     return PAGE.format(
         title=source.stem,
         source=source.name,
+        source_js=json.dumps(source.name),
         tree=body,
         editable="true" if editable else "false",
         bodycls="" if editable else "readonly",
