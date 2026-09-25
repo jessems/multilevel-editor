@@ -255,10 +255,15 @@ PAGE = """<!DOCTYPE html>
   #saveBtn:disabled {{ opacity:.45; cursor:default; }}
   #saveBtn.dirty {{ background:var(--acc); color:var(--bg); border-color:var(--acc); }}
   body.readonly #saveBtn, body.readonly #mdBtn {{ display:none; }}
-  /* level switch — one mode per depth the outline uses: N shows the top N levels */
+  /* level switch — one mode per depth the outline uses: N shows the top N levels.
+     Its own row at the bottom of the header, centred on the page: the header
+     pads 56px right for the pinned cog vs 24px left, so the row extends 32px
+     into that padding to make its centre the page centre. */
+  .levels-row {{ order:99; flex:0 0 calc(100% + 32px); display:flex; justify-content:center;
+                 margin:2px -32px 0 0; }}
+  .levels-row:has(#levels:empty), body.mdmode .levels-row {{ display:none; }}
   #levels {{ display:inline-flex; align-items:stretch; border:1px solid var(--line);
              border-radius:6px; overflow:hidden; }}
-  #levels:empty, body.mdmode #levels {{ display:none; }}
   #levels button {{ border:none; border-radius:0; padding:6px 10px; min-width:30px; }}
   #levels button + button {{ border-left:1px solid var(--line); }}
   #levels button:hover {{ background:var(--hover); }}
@@ -454,6 +459,7 @@ PAGE = """<!DOCTYPE html>
     body {{ font-size:16px; }}
     header {{ padding:8px 14px; }}
     header .hint {{ display:none; }}
+    .levels-row {{ flex-basis:100%; margin-right:0; }}
     main {{ padding:18px 14px 100px; }}
     ul {{ padding-left:18px; }}
     .h1 {{ font-size:23px; }}
@@ -465,12 +471,12 @@ PAGE = """<!DOCTYPE html>
 <header>
   <h1>{title}</h1>
   <span class="src">{source}</span>
-  <span id="levels" role="group" aria-label="visible levels" title="visible levels"></span>
   <button id="mdBtn">Markdown</button>
   <span class="hint">{hint}</span>
   <span id="status"></span>
   <button id="saveBtn" disabled>Save</button>
   <button id="menuBtn" aria-label="settings" title="settings"></button>
+  <div class="levels-row"><span id="levels" role="group" aria-label="visible levels" title="visible levels"></span></div>
 </header>
 <aside id="sidebar" aria-label="settings">
   <div class="sb-head"><h2>Settings</h2><button id="sbClose" aria-label="close">×</button></div>
