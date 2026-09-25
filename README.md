@@ -24,18 +24,20 @@ back to the `.md` only when you press **Save**.
 ## Features
 
 - **Collapsible tree** — carets on branch bullets, plus a **level switch**
-  centred at the bottom of the header with one mode per depth the outline uses: `1` shows only the
-  top-level bullets, `2` the top two levels, and so on up to the deepest
-  level, which shows everything. When the top level is a single bullet (a
-  title) the `1` mode is omitted, since it would show nothing but the title.
-  Deeper levels are **removed from view**, not
-  merely collapsed — a branch at the cut level shows a leaf dot, not a caret —
-  while carets keep working within the visible levels. The buttons follow the
-  outline (a fourth level added in the markdown view adds a `4`), the chosen
-  level is remembered per file so the reload after Save comes back at the
-  same depth, and editing never lands a bullet in a hidden level: Enter on a
-  cut-level bullet adds a sibling, and Tab into a hidden level is refused
-  with a notice.
+  centred at the bottom of the header with one mode per **heading level**
+  the outline uses, plus one for the paragraphs: `2` shows `#` and `##`
+  headings, `3` adds the `###` headings, and the highest number is the
+  paragraph level, which shows everything. Every non-heading bullet counts
+  as a paragraph wherever it is nested, so a heading-only view never mixes
+  in paragraphs (an outline with no headings falls back to nesting depth).
+  The `1` mode is omitted when a lone title is all that lives at level 1.
+  Bullets below the chosen level are **removed from view**, not merely
+  collapsed — a branch whose children are all hidden shows a leaf dot, not a
+  caret — while carets keep working among the visible bullets. The buttons
+  follow the outline, the chosen level is remembered per file so the reload
+  after Save comes back at the same level, and a bullet being edited is
+  always shown: once staged it follows its level, with a notice if that
+  hides it.
 - **Reading typography** — a book-like serif at a comfortable measure, with
   a dark palette that follows the system colour scheme.
 - **Click to edit in place** — the bullet's raw markdown, same font and

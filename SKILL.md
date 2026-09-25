@@ -58,12 +58,14 @@ warning. Save serializes the whole outline from the page and rewrites the
   (the tree rebuilds, chips recompute) or Save directly. Only the outline body
   is shown; frontmatter stays untouched.
 - **Collapse/expand** via the caret on branch bullets; the **level switch**
-  centred at the bottom of the header has one mode per depth the outline uses (`1` = top level only —
-  omitted when the top level is a lone title —, …, deepest = everything); deeper levels are removed from view, not collapsed
-  (cut-level branches show a dot, Tab into a hidden level is refused), and
-  the choice is remembered per file across reloads. Text selection
-  inside a bullet triggers edit
-  mode — Esc backs out without saving.
+  centred at the bottom of the header has one mode per heading level plus
+  the paragraph level (`2` = `#`/`##` headings, `3` = plus `###`, highest =
+  paragraphs, i.e. everything; `1` omitted for a lone title). Every
+  non-heading bullet is paragraph level wherever it nests; bullets below the
+  chosen level are removed from view, not collapsed (branches with all
+  children hidden show a dot; a bullet being edited always shows), and the
+  choice is remembered per file across reloads. Text selection inside a
+  bullet triggers edit mode — Esc backs out without saving.
 - **Conflict safety**: the page carries a hash of the file it was built from;
   if the file changed on disk in the meantime, Save is refused (409) rather
   than clobbering — refresh and redo (staged changes are lost). Reloading
