@@ -685,8 +685,8 @@ PAGE = """<!DOCTYPE html>
     const help = document.getElementById('help'), helpBtn = document.getElementById('helpBtn');
     const esc = t => t.replace(/[&<>]/g, c => ({{ '&':'&amp;', '<':'&lt;', '>':'&gt;' }})[c]);
     help.querySelector('ul').innerHTML = help.dataset.hint.split(' · ').filter(Boolean)
-      .map(t => '<li>' + esc(t).replace(/⌘[A-Z]|Enter|Shift\+Tab|\bTab\b/g, k => '<kbd>' + k + '</kbd>') + '</li>')
-      .join('').replace(/\((<kbd>[^<]*<\/kbd>)\)/g, '$1');
+      .map(t => '<li>' + esc(t).replace(/⌘[A-Z]|Enter|Shift\\+Tab|\\bTab\\b/g, k => '<kbd>' + k + '</kbd>') + '</li>')
+      .join('').replace(/\\((<kbd>[^<]*<\\/kbd>)\\)/g, '$1');
     const setHelp = open => {{ help.hidden = !open; helpBtn.setAttribute('aria-expanded', String(open)); }};
     helpBtn.addEventListener('click', () => setHelp(help.hidden));
     document.addEventListener('click', e => {{
