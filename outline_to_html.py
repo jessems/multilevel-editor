@@ -528,6 +528,8 @@ PAGE = """<!DOCTYPE html>
   const SOURCE = {source_js};
   const SCHEME = "{scheme}";
   const ORPHANS = {orphans};
+  const DRAFT_ORPHANS = {draft_orphans};   // written text whose paragraph is gone — sent back on save, kept in the draft
+  const DRAFT_NAME = {draft_name};
   const tree = document.getElementById('tree');
   const mdview = document.getElementById('mdview');
   const mdBtn = document.getElementById('mdBtn');
@@ -1345,6 +1347,11 @@ PAGE = """<!DOCTYPE html>
       if (r.checked) {{ settings.scheme = r.value; applySettings(); markDirty(); }}
     }}));
   applySettings();   // reinterpret server-rendered badges per settings
+  {{
+    const n = Object.keys(DRAFT_ORPHANS).length;
+    if (n) flash(n + ' written paragraph' + (n > 1 ? 's' : '') + ' no longer match' + (n > 1 ? '' : 'es') +
+                 ' a topic sentence — kept at the end of ' + DRAFT_NAME, 'error');
+  }}
   if (ORPHANS) flash(ORPHANS + ' orphaned tag' + (ORPHANS > 1 ? 's' : '') +
                      ' in the sidecar (paragraph text changed) — dropped on next save', 'error');
 
@@ -1363,7 +1370,8 @@ PAGE = """<!DOCTYPE html>
     try {{
       const r = await fetch('/save', {{ method: 'POST',
         headers: {{'Content-Type': 'application/json'}},
-        body: JSON.stringify({{ hash: FILEHASH, scheme: settings.scheme, bullets }}) }});
+        body: JSON.stringify({{ hash: FILEHASH, scheme: settings.scheme, bullets,
+                                draft_orphans: DRAFT_ORPHANS }}) }});
       if (!r.ok) throw new Error((await r.json()).error || r.status);
       dirty = false;
       location.reload();
@@ -1463,12 +1471,88 @@ def generate_text(prompt: str, model: str, cwd: Path) -> str:
     return proc.stdout.strip()
 
 
+# ---------- the draft: written paragraphs live beside the outline, not in it ----------
+# The outline (skeleton) holds structure only: headings and paragraph topic
+# sentences. A paragraph's written text — level 5 in the editor — is a DRAFT
+# and is stored in `<outline>.draft.md`: the whole outline with the written
+# text nested under each paragraph, readable as a document. On load the text
+# is re-attached to its paragraph by a content fingerprint of the topic
+# sentence; written text whose paragraph no longer exists is an orphan,
+# reported on load and kept at the end of the draft under an
+# "Orphaned draft text" heading (never silently dropped).
+ORPHAN_HEADING = "# Orphaned draft text"
+
+
+def draft_path(source: Path) -> Path:
+    return source.with_name(source.stem + ".draft.md")
+
+
+def is_heading_raw(raw: str) -> bool:
+    return bool(re.match(r"^#{1,6}\s", raw))
+
+
+def load_draft(source: Path) -> dict:
+    """fingerprint(topic sentence) -> {"para": raw, "texts": [written...]}"""
+    p = draft_path(source)
+    if not p.exists():
+        return {}
+    written = {}
+
+    def walk(nodes, parent):
+        for n in nodes:
+            raw = split_tag(n["raw"])[0].strip()
+            if parent is not None and not is_heading_raw(parent) and not is_heading_raw(raw):
+                entry = written.setdefault(fingerprint(parent), {"para": parent, "texts": []})
+                entry["texts"].append(raw)
+            walk(n["children"], raw)
+
+    walk(parse_outline(p.read_text(encoding="utf-8")), None)
+    return written
+
+
+def partition_bullets(bullets):
+    """Split saved bullets into skeleton lines (structure) and draft lines
+    (structure + written text). A bullet is written text when it and its
+    parent are both non-headings."""
+    stack = []          # (indent, is_heading)
+    skeleton, draft = [], []
+    for b in bullets:
+        indent, raw = b["indent"], b["raw"]
+        while stack and stack[-1][0] >= indent:
+            stack.pop()
+        heading = is_heading_raw(raw)
+        written = bool(stack) and not stack[-1][1] and not heading
+        line = "  " * indent + "- " + raw
+        draft.append(line)
+        if not written:
+            skeleton.append(line)
+        stack.append((indent, heading))
+    return skeleton, draft
+
+
+def write_draft(source: Path, draft_lines, orphans: dict) -> None:
+    lines = [
+        "---",
+        f"summary: Draft of {source.name} — the outline with each paragraph's written text nested under its topic sentence. Maintained by multilevel-editor; structure is edited in the skeleton, the prose here.",
+        f"source: {source.name}",
+        "status: draft",
+        "---",
+        "",
+    ] + list(draft_lines)
+    if orphans:
+        lines += ["", "- " + ORPHAN_HEADING]
+        for entry in orphans.values():
+            lines.append("  - " + entry["para"])
+            lines += ["    - " + t for t in entry["texts"]]
+    draft_path(source).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def combined_hash(source: Path) -> str:
-    """Conflict guard spans the outline AND its sidecar."""
-    text = source.read_text(encoding="utf-8")
-    side = tags_path(source)
-    sidecar = side.read_text(encoding="utf-8") if side.exists() else ""
-    return hashlib.sha256((text + "\0" + sidecar).encode("utf-8")).hexdigest()
+    """Conflict guard spans the outline AND its sidecars (tags, draft)."""
+    parts = [source.read_text(encoding="utf-8")]
+    for side in (tags_path(source), draft_path(source)):
+        parts.append(side.read_text(encoding="utf-8") if side.exists() else "")
+    return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()
 
 
 def build_page(source: Path, editable: bool) -> str:
@@ -1479,8 +1563,10 @@ def build_page(source: Path, editable: bool) -> str:
         sys.exit(f"error: no '- ' bullets found in {source}")
 
     used = set()
+    draft = load_draft(source)
+    draft_used = set()
 
-    def attach(nodes):
+    def attach(nodes, parent_heading=True):
         for n in nodes:
             clean, inline = split_tag(n["raw"])
             n["raw"] = clean.strip()
@@ -1490,10 +1576,16 @@ def build_page(source: Path, editable: bool) -> str:
                 used.add(fp)
             else:
                 n["tag"] = inline   # legacy inline tag — migrates to the sidecar on save
-            attach(n["children"])
+            heading = is_heading_raw(n["raw"])
+            attach(n["children"], heading)
+            if parent_heading and not heading and fp in draft:      # a paragraph: hang its draft text under it
+                draft_used.add(fp)
+                n["children"] += [{"indent": n["indent"] + 1, "raw": t, "tag": None, "children": []}
+                                  for t in draft[fp]["texts"]]
 
     attach(tree)
     orphans = sum(1 for k in meta["tags"] if k not in used)
+    draft_orphans = {k: v for k, v in draft.items() if k not in draft_used}
     assign_numbers(tree)
     body = "\n".join(render_node(n) for n in tree)
     return PAGE.format(
@@ -1506,7 +1598,9 @@ def build_page(source: Path, editable: bool) -> str:
         filehash=combined_hash(source),
         scheme=meta["scheme"],
         orphans=orphans,
-        hint="click to edit · Enter adds a bullet below · drag to move · hover between bullets to insert · letter badge tags the paragraph role · quill writes the paragraph · trash to delete · ⌘Z undoes · Markdown for raw view · Save (⌘S) writes to the .md"
+        draft_orphans=json.dumps(draft_orphans),
+        draft_name=json.dumps(draft_path(source).name),
+        hint="click to edit · Enter adds a bullet below · drag to move · hover between bullets to insert · letter badge tags the paragraph role · quill writes the paragraph (draft) · trash to delete · ⌘Z undoes · Markdown for raw view · Save (⌘S) writes the skeleton and the draft"
         if editable else "",
     )
 
@@ -1556,20 +1650,27 @@ def serve(source: Path, port: int, open_browser: bool = True, model: str = "clau
                         fm.append(line)
                         if line.strip() == "---":
                             break
-                lines, tagged = [], []
+                bullets, tagged = [], []
                 for b in req["bullets"]:
                     clean = split_tag(b["raw"].strip())[0].strip()   # belt & braces: outline stays tag-free
-                    lines.append("  " * b["indent"] + "- " + clean)
+                    bullets.append({"indent": b["indent"], "raw": clean})
                     if b.get("tag"):
                         tagged.append((clean, b["tag"]))
                 scheme = req.get("scheme")
                 if scheme not in SCHEME_NAMES:
                     scheme = "creac"
-                out = "".join(fm) + ("\n" if fm else "") + "\n".join(lines) + "\n"
+                # structure goes to the skeleton; structure + written text to the draft
+                skeleton, draft_lines = partition_bullets(bullets)
+                out = "".join(fm) + ("\n" if fm else "") + "\n".join(skeleton) + "\n"
                 source.write_text(out, encoding="utf-8")
                 write_meta(source, scheme, tagged)
+                orphans = req.get("draft_orphans") or {}
+                n_written = len(draft_lines) - len(skeleton)
+                if n_written or orphans or draft_path(source).exists():
+                    write_draft(source, draft_lines, orphans)
                 self._send(200, json.dumps({"ok": True}), "application/json")
-                print(f"  saved: {len(lines)} bullets, {len(tagged)} tags -> {tags_path(source).name}")
+                print(f"  saved: {len(skeleton)} bullets, {len(tagged)} tags, "
+                      f"{n_written} written paragraphs -> {draft_path(source).name}", flush=True)
             except Exception as e:  # noqa: BLE001 — report any save failure to the client
                 self._send(400, json.dumps({"error": str(e)}), "application/json")
 

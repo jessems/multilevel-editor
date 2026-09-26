@@ -102,13 +102,20 @@ back to the `.md` only when you press **Save**.
   first save. Badge hues follow the letter's position in the scheme; a letter
   not in the active scheme renders muted, and clicking it retags into the
   current scheme.
-- **Written paragraphs** — the text of a paragraph lives as a child bullet
-  of its topic sentence (the paragraph reads as a semibold heading over it).
-  Written text belongs to its paragraph: it has no drag handle, no dot and
-  no number, moves only with its paragraph, and nothing nests under it. Make
-  it by indenting a bullet under the paragraph above (Tab) or in the
-  markdown view; several written bullets under one paragraph are fine (e.g.
-  lettered sub-items).
+- **Written paragraphs live in a draft file, not in the outline** — the
+  text of a paragraph shows as a child bullet of its topic sentence in the
+  editor (the paragraph reads as a semibold heading over it), but the
+  outline `.md` keeps structure only. On Save the written text goes to
+  `<outline>.draft.md`: the whole outline with each paragraph's text nested
+  under its topic sentence, readable as a document and marked
+  `status: draft`. On load the text is re-attached by a content fingerprint
+  of the topic sentence; text whose paragraph has disappeared (the outline
+  was edited outside) is reported and kept at the end of the draft under an
+  "Orphaned draft text" heading, never dropped. Written text belongs to its
+  paragraph: no drag handle, dot or number, it moves only with its
+  paragraph, and nothing nests under it. Make it with the quill, by
+  indenting a bullet under the paragraph above (Tab), or in the markdown
+  view (which shows structure and text together).
 - **Write the paragraph (quill button)** — every numbered paragraph has a
   quill next to its trash icon (hover the row). Clicking it sends the whole
   staged outline, with that paragraph marked, to a model and inserts the
@@ -135,7 +142,9 @@ back to the `.md` only when you press **Save**.
 
 ## File format
 
-- `- ` bullets, 2-space indentation per level.
+- `- ` bullets, 2-space indentation per level. The outline holds headings and
+  paragraph topic sentences; written paragraph text is stored beside it in
+  `<outline>.draft.md` (see Written paragraphs) and never in the outline.
 - Optional YAML frontmatter is preserved verbatim (never shown or edited).
 - Bullets support minimal inline markdown: `**bold**`, `*italic*`,
   `` `code` ``, and `#`/`##`/`###` prefixes for heading bullets.

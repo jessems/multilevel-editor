@@ -38,12 +38,17 @@ warning. Save serializes the whole outline from the page and rewrites the
   indents** the bullet (last child of its previous sibling, subtree included)
   and **Shift+Tab outdents** it (parent's next sibling); both keep edit mode
   and caret position, and flash a notice when not possible.
-- **Written paragraphs — the level under a paragraph.** A non-heading bullet
-  nested under a paragraph is that paragraph's written text: no grip, dot or
-  number of its own, it moves only with its paragraph (drops never land
-  inside a paragraph), and nothing nests under it. Create it with Tab under
-  the paragraph above, or in the markdown view. The paragraph over it
-  renders semibold.
+- **Written paragraphs are a draft, stored beside the outline.** In the
+  editor a paragraph's written text is a child bullet of its topic sentence
+  (level 5), but the outline `.md` keeps structure only: on Save the text is
+  written to `<outline>.draft.md` — the whole outline with the prose nested
+  under each paragraph, `status: draft` — and on load it is re-attached by a
+  fingerprint of the topic sentence. Text whose paragraph has vanished is
+  reported and kept at the end of the draft under "Orphaned draft text".
+  Written text has no grip, dot or number, moves only with its paragraph,
+  and nothing nests under it. Create it with the quill, Tab under the
+  paragraph above, or in the markdown view. Treat the draft as part of the
+  outline (move/rename both together).
 - **Paragraph numbers are computed by the UI, never stored in the file.** A
   bullet gets a small sequential number chip (replacing its dot) when it sits
   directly under a heading bullet and is neither a heading (`#…`) nor a
