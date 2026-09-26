@@ -966,7 +966,8 @@ PAGE = """<!DOCTYPE html>
       if (open) item.querySelectorAll(':scope > ul > li.deep').forEach(k => k.classList.remove('deep'));
     }} else if (e.target.closest('.nlabel')) {{
       if (item.navLi) revealBullet(item.navLi);
-      else location.href = '?doc=' + encodeURIComponent(item.navDoc) + '&at=' + item.navAt;   // another member: open it there
+      else location.href = '?doc=' + encodeURIComponent(item.navDoc) + '&at=' + item.navAt +
+                           '&level=' + activeLevel;              // another member: open it there, same level
     }}
   }});
   {{   // arrived from another member's tree: jump to the node that was clicked
@@ -1112,7 +1113,9 @@ PAGE = """<!DOCTYPE html>
   {{
     let stored = null;
     try {{ stored = localStorage.getItem(LEVEL_KEY); }} catch {{}}
-    if (stored === 'all') showLevels(99, false);
+    const asked = parseInt(new URLSearchParams(location.search).get('level'), 10);   // arriving from another member
+    if (asked > 0) showLevels(asked, true);
+    else if (stored === 'all') showLevels(99, false);
     else if (parseInt(stored, 10) > 0) showLevels(parseInt(stored, 10), false);
     else syncLevels();
   }}
@@ -1617,7 +1620,7 @@ PAGE = """<!DOCTYPE html>
         body: JSON.stringify({{ doc: DOC, instruction, level: activeLevel }}) }});
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || r.status);
-      location.href = '?doc=' + encodeURIComponent(data.name);   // the new page shows it being written
+      location.href = '?doc=' + encodeURIComponent(data.name) + '&level=' + activeLevel;   // the new page shows it being written, then opens at this level
     }} catch (err) {{
       variantDlg.classList.remove('busy');
       variantErr.textContent = 'could not generate the variant: ' + err.message;
