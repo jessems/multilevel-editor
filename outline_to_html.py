@@ -519,7 +519,7 @@ PAGE = """<!DOCTYPE html>
                         color:var(--ink); background:var(--btn); border:1px solid var(--line);
                         border-radius:6px; }}
   .main-tools button:hover {{ border-color:var(--mut); }}
-  body.readonly .main-tools, body.mdmode .main-tools {{ display:none; }}
+  body:not(.toplevel) .main-tools, body.readonly .main-tools, body.mdmode .main-tools {{ display:none; }}
   #variantDlg {{ border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink);
                  padding:20px 22px 18px; width:min(560px, 92vw); box-sizing:border-box;
                  font:14px/1.5 var(--sans); box-shadow:0 18px 50px rgba(0,0,0,.25); }}
@@ -919,6 +919,7 @@ PAGE = """<!DOCTYPE html>
     rows.forEach(r => r.li.classList.toggle('lvcut', r.branch &&
       [...r.li.querySelector(':scope > ul').children].every(c => c.classList.contains('lvhide'))));
     const active = cut || max;
+    document.body.classList.toggle('toplevel', active === min);   // the variant button lives on the top level only
     [...levelBar.children].forEach(b => b.classList.toggle('on', +b.dataset.level === active));
     renderNav(rows, max, H);
   }}
