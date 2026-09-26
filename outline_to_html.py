@@ -514,11 +514,20 @@ PAGE = """<!DOCTYPE html>
   body.readonly #insertHint {{ display:none; }}
 
   /* ---------- main tools (top right of the reading column) + variant dialog ---------- */
-  .main-tools {{ display:flex; justify-content:flex-end; margin:-6px 0 14px; }}
-  .main-tools button {{ font:500 12.5px/1 var(--sans); padding:6px 11px; cursor:pointer;
-                        color:var(--ink); background:var(--btn); border:1px solid var(--line);
-                        border-radius:6px; }}
-  .main-tools button:hover {{ border-color:var(--mut); }}
+  .main-tools {{ display:flex; justify-content:flex-end; margin:-6px 0 16px; }}
+  /* the primary action of the top level: an accent pill with a branch icon,
+     in the header's sans face — the same voice as the armed Save button */
+  .main-tools button {{ display:inline-flex; align-items:center; gap:7px; cursor:pointer;
+                        font:600 12.5px/1 var(--sans); letter-spacing:.01em; padding:8px 14px 8px 12px;
+                        color:var(--bg); background:var(--acc); border:1px solid var(--acc); border-radius:999px;
+                        box-shadow:0 1px 2px rgba(0,0,0,.10);
+                        transition:transform .08s ease, box-shadow .12s ease, filter .12s ease; }}
+  .main-tools button::before {{ content:''; display:inline-block; width:14px; height:14px; background:currentColor;
+    -webkit-mask:var(--icon) center/contain no-repeat; mask:var(--icon) center/contain no-repeat;
+    --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 3v12'/%3E%3Ccircle cx='18' cy='6' r='3'/%3E%3Ccircle cx='6' cy='18' r='3'/%3E%3Cpath d='M18 9a9 9 0 0 1-9 9'/%3E%3C/svg%3E"); }}
+  .main-tools button:hover {{ filter:brightness(1.07); box-shadow:0 3px 8px rgba(0,0,0,.16); transform:translateY(-1px); }}
+  .main-tools button:active {{ transform:none; box-shadow:0 1px 2px rgba(0,0,0,.10); filter:none; }}
+  .main-tools button:focus-visible {{ outline:2px solid var(--acc); outline-offset:3px; }}
   body:not(.toplevel) .main-tools, body.readonly .main-tools, body.mdmode .main-tools {{ display:none; }}
   #variantDlg {{ border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink);
                  padding:20px 22px 18px; width:min(560px, 92vw); box-sizing:border-box;
@@ -637,7 +646,7 @@ PAGE = """<!DOCTYPE html>
 </aside>
 <nav id="nav" aria-label="navigator"><div class="nav-title">Navigator</div><ul id="navTree"></ul></nav>
 <main>
-<div class="main-tools"><button id="variantBtn" type="button" title="generate a skeleton variant as a new file">Skeleton variant…</button></div>
+<div class="main-tools"><button id="variantBtn" type="button" title="generate a variant of this skeleton as a new file">New skeleton variant</button></div>
 <ul id="tree">{tree}</ul>
 <textarea id="mdview" spellcheck="false"></textarea>
 </main>
