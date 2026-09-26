@@ -85,7 +85,11 @@ warning. Save serializes the whole outline from the page and rewrites the
   `bullets`), the open one tinted, variants suffixed "(variant N)"; a node
   of another member opens it at that node (`?doc=<name>&at=<index>`). A
   tab strip above the outline (`#docTabs`: Original / Variant N, ‹ ›)
-  switches members at any level, carrying `?level=`. Start the server on the base skeleton; it serves
+  switches members at any level, carrying `?level=`. Its **Compare** toggle
+  makes the tabs picks (this document first, then one more); with two picked,
+  `#compare` shows both skeletons side by side (read-only `treeHtml` panes,
+  numbered, cut by the same level switch via `applyCut`); Esc or the toggle
+  ends it. Pending variants cannot be picked. Start the server on the base skeleton; it serves
   the family and refuses any other path. Unsaved edits block generation.
 - **Drag to move**: a grip (`⋮⋮`) appears left of a bullet on hover; dragging
   it moves the bullet **with its whole subtree** (indicator line shows the

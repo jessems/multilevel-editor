@@ -652,6 +652,38 @@ PAGE = """<!DOCTYPE html>
   .dtabs button.pending {{ font-style:italic; }}
   .dtabs .dnav {{ padding:0 6px; font-size:13px; }}
   .dtabs .dnav:disabled {{ opacity:.3; cursor:default; background:none; }}
+  /* Compare: always in the strip; toggled on, the tabs become picks (two at
+     most) and the two skeletons open side by side, following the level switch */
+  .dtabs .dcmp {{ margin-left:4px; padding-left:22px; position:relative;
+                  border-left:1px solid color-mix(in srgb, var(--acc) 25%, var(--line)); border-radius:0 6px 6px 0; }}
+  .dtabs .dcmp::before {{ content:''; position:absolute; left:8px; top:5px; width:11px; height:11px; background:currentColor;
+    -webkit-mask:var(--icon) center/contain no-repeat; mask:var(--icon) center/contain no-repeat;
+    --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='7' height='16' rx='1.5'/%3E%3Crect x='14' y='4' width='7' height='16' rx='1.5'/%3E%3C/svg%3E"); }}
+  .dtabs.comparing .dtab {{ cursor:copy; }}
+  .dtabs.comparing .dtab.pick {{ box-shadow:inset 0 0 0 1.5px var(--acc); color:var(--acc); }}
+  .dtabs.comparing .dnav {{ opacity:.3; pointer-events:none; }}
+  body.comparing main {{ max-width:1460px; }}
+  body.comparing #tree, body.comparing .main-tools, body.comparing #insertHint {{ display:none; }}
+  /* while comparing, the strip and the two panes form one folder: the tabs
+     keep their open-bottom frame and the panes sit inside it */
+  body.comparing #docTabs {{ border-color:var(--vframe); border-bottom-color:transparent;
+    border-bottom-left-radius:0; border-bottom-right-radius:0; }}
+  body.comparing #compare {{
+    box-shadow:0 0 0 1px color-mix(in srgb, var(--acc) 25%, var(--line));
+    background:color-mix(in srgb, var(--acc) 6%, var(--bg)); border-top-left-radius:0; }}
+  #compare {{ display:grid; grid-template-columns:1fr 1fr; gap:0 28px; margin:0 -12px; padding:8px 12px 12px;
+              border-radius:8px; transition:box-shadow .12s, background .12s; }}
+  #compare[hidden], body.mdmode #compare {{ display:none; }}
+  .cmp-pane {{ min-width:0; }}
+  .cmp-pane + .cmp-pane {{ border-left:1px solid var(--line); padding-left:28px; }}
+  .cmp-head {{ margin:0 0 10px; padding:0 0 8px; border-bottom:1px solid var(--line);
+              font:600 11px/1 var(--sans); letter-spacing:.08em; text-transform:uppercase; color:var(--mut); }}
+  .cmp-head b {{ color:var(--acc); }}
+  .cmp-tree {{ border-left:none; padding-left:0; }}
+  #compare .grip, #compare .act, #compare .creac, #compare .caret {{ display:none; }}
+  #compare .txt {{ cursor:default; }}
+  #compare .h1 {{ font-size:22px; }}
+  #compare .h2 {{ font-size:18px; }}
   /* the primary action of the top level: an accent pill with a branch icon,
      in the header's sans face — the same voice as the armed Save button */
   #variantBtn {{ display:inline-flex; align-items:center; gap:7px; cursor:pointer;
@@ -795,6 +827,7 @@ PAGE = """<!DOCTYPE html>
 </div>
 <div class="dtabs" id="docTabs" role="tablist" aria-label="the skeleton and its variants"></div>
 <ul id="tree">{tree}</ul>
+<div id="compare" hidden></div>
 <textarea id="mdview" spellcheck="false"></textarea>
 </main>
 <dialog id="variantDlg" aria-labelledby="variantTitle">
@@ -1043,16 +1076,16 @@ PAGE = """<!DOCTYPE html>
     fit();
     if (window.ResizeObserver) new ResizeObserver(fit).observe(header);
   }}
-  function eachRow(fn) {{                      // fn(li, depth, hasChildren), depth from 1
+  function eachRow(fn, root = tree) {{         // fn(li, depth, hasChildren), depth from 1
     (function walk(ul, d) {{
       [...ul.children].forEach(li => {{
         const sub = li.querySelector(':scope > ul');
         fn(li, d, !!sub);
         if (sub) walk(sub, d + 1);
       }});
-    }})(tree, 1);
+    }})(root, 1);
   }}
-  function levelRows() {{                      // [{{li, branch, lvl}}], max level, deepest heading
+  function levelRows(root = tree) {{           // [{{li, branch, lvl}}], max level, deepest heading
     const rows = [];
     let H = 0, anyPara = false;
     eachRow((li, d, branch) => {{
@@ -1060,7 +1093,7 @@ PAGE = """<!DOCTYPE html>
       if (h > H) H = h;
       if (!h) anyPara = true;
       rows.push({{ li, d, branch, h, body: isBody(li) }});
-    }});
+    }}, root);
     if (FAMILY) {{                             // a variant offers the same modes as its family
       H = Math.max(H, FAMILY.h || 0);
       anyPara = anyPara || !!FAMILY.para;
@@ -1131,6 +1164,18 @@ PAGE = """<!DOCTYPE html>
       }}
     }}
     const cut = level > 0 && level < max ? level : 0;
+    applyCut(rows, cut, H);
+    document.querySelectorAll('#compare .cmp-tree').forEach(ul => {{   // the compared skeletons follow the same level
+      const pr = levelRows(ul);
+      applyCut(pr.rows, cut, pr.H);
+    }});
+    const active = cut || max;
+    activeLevel = active;
+    document.body.classList.toggle('toplevel', active === min);   // the variant button lives on the top level only
+    [...levelBar.children].forEach(b => b.classList.toggle('on', +b.dataset.level === active));
+    renderNav(rows, max, H);
+  }}
+  function applyCut(rows, cut, H) {{
     rows.forEach(r => {{
       const para = H > 0 && !r.h && !r.body;          // a paragraph: align it to the paragraph column
       r.li.classList.toggle('para', para);
@@ -1139,11 +1184,6 @@ PAGE = """<!DOCTYPE html>
     rows.forEach(r => r.li.classList.toggle('lvhide', cut > 0 && r.lvl > cut));
     rows.forEach(r => r.li.classList.toggle('lvcut', r.branch &&
       [...r.li.querySelector(':scope > ul').children].every(c => c.classList.contains('lvhide'))));
-    const active = cut || max;
-    activeLevel = active;
-    document.body.classList.toggle('toplevel', active === min);   // the variant button lives on the top level only
-    [...levelBar.children].forEach(b => b.classList.toggle('on', +b.dataset.level === active));
-    renderNav(rows, max, H);
   }}
   levelBar.addEventListener('click', e => {{
     const b = e.target.closest('button');
@@ -1279,6 +1319,10 @@ PAGE = """<!DOCTYPE html>
       stack[stack.length - 1].children.push(node);
       stack.push(node);
     }});
+    tree.innerHTML = treeHtml(root.children);
+    renumberChips();
+  }}
+  function treeHtml(nodes) {{
     function renderNode(n) {{
       const d = renderMd(n.raw);
       const grip = '<span class="grip" draggable="true" title="drag to move">⋮⋮</span>';
@@ -1293,8 +1337,18 @@ PAGE = """<!DOCTYPE html>
       return '<li class="leaf"><div class="row"><div class="main">' + grip + '<span class="dot"></span>' +
              span + '</div></li>';
     }}
-    tree.innerHTML = root.children.map(renderNode).join('');
-    renumberChips();
+    return nodes.map(renderNode).join('');
+  }}
+  function nodesOf(bullets) {{                 // bullets → nested nodes (as buildTree does)
+    const root = {{ indent: -1, children: [] }};
+    const stack = [root];
+    bullets.forEach(b => {{
+      const node = {{ indent: b.indent, raw: b.raw, tag: b.tag || null, children: [] }};
+      while (stack[stack.length - 1].indent >= b.indent) stack.pop();
+      stack[stack.length - 1].children.push(node);
+      stack.push(node);
+    }});
+    return root.children;
   }}
 
   // UI paragraph numbering: bullets directly under a heading bullet, not
@@ -1322,6 +1376,12 @@ PAGE = """<!DOCTYPE html>
   }}
   window.addEventListener('resize', fitMargin);
   function renumberChips() {{
+    numberRows(tree, false);
+    tree.querySelectorAll('li').forEach(li =>
+      li.classList.toggle('written', !!li.querySelector(':scope > ul > li.pbody')));
+    syncLevels();
+  }}
+  function numberRows(root, readonly) {{
     let k = 0;
     (function walk(ul, parentHeading) {{
       [...ul.children].forEach(li => {{
@@ -1348,6 +1408,7 @@ PAGE = """<!DOCTYPE html>
           }}
           span.closest('.row').classList.toggle('numbered', numbered);
           if (!span.isContentEditable) syncMargin(span.closest('.row'), raw);
+          if (readonly) {{ const sub0 = li.querySelector(':scope > ul'); if (sub0) walk(sub0, isHeading); return; }}
           // numbered rows get the quill (generate written text) before the trash
           const act = li.querySelector(':scope > .row > .act');
           let gen = act && act.querySelector(':scope > .gen');
@@ -1378,10 +1439,7 @@ PAGE = """<!DOCTYPE html>
         const sub = li.querySelector(':scope > ul');
         if (sub) walk(sub, isHeading);
       }});
-    }})(tree, true);
-    tree.querySelectorAll('li').forEach(li =>
-      li.classList.toggle('written', !!li.querySelector(':scope > ul > li.pbody')));
-    syncLevels();
+    }})(root, true);
   }}
 
   // nesting rules — returns an error message, or null when `li` may become a
@@ -1657,12 +1715,57 @@ PAGE = """<!DOCTYPE html>
         DOCS.map((d, i) => b('dtab' + (d.current ? ' on' : '') + (d.pending ? ' pending' : ''), tabLabel(d),
                              d.title + (d.suffix ? ' ' + d.suffix : '') + ' — ' + d.name,
                              ' role="tab" data-i="' + i + '" aria-selected="' + !!d.current + '"')).join('') +
-        b('dnav', '›', 'next', at >= DOCS.length - 1 ? ' disabled' : '');
+        b('dnav', '›', 'next', at >= DOCS.length - 1 ? ' disabled' : '') +
+        b('dcmp', 'Compare', 'compare two of them side by side', ' aria-pressed="false"');
+      // ---- compare: pick two tabs, see the two skeletons side by side ----
+      const compare = document.getElementById('compare');
+      const cmp = {{ on: false, picks: [] }};
+      const tabs = () => [...strip.querySelectorAll('.dtab')];
+      function paneBullets(i) {{
+        return DOCS[i].current ? serialize() : (DOCS[i].bullets || []);
+      }}
+      function renderCompare() {{
+        tabs().forEach((t, i) => t.classList.toggle('pick', cmp.on && cmp.picks.includes(i)));
+        const ready = cmp.on && cmp.picks.length === 2;
+        document.body.classList.toggle('comparing', ready);
+        if (!ready) {{ compare.hidden = true; compare.innerHTML = ''; return; }}
+        compare.innerHTML = cmp.picks.map(i => {{
+          const d = DOCS[i];
+          return '<section class="cmp-pane"><h2 class="cmp-head"><b>' + esc(tabLabel(d)) + '</b> · ' +
+                 esc(d.title) + (d.current ? ' · this document' : '') + '</h2>' +
+                 '<ul class="cmp-tree">' + treeHtml(nodesOf(paneBullets(i))) + '</ul></section>';
+        }}).join('');
+        compare.hidden = false;
+        compare.querySelectorAll('.cmp-tree').forEach(ul => numberRows(ul, true));
+        syncLevels();                            // apply the current level to both panes
+      }}
+      function setCompare(on) {{
+        cmp.on = on;
+        cmp.picks = on ? [at].filter(i => i >= 0) : [];
+        strip.classList.toggle('comparing', on);
+        const btn = strip.querySelector('.dcmp');
+        btn.classList.toggle('on', on); btn.setAttribute('aria-pressed', String(on));
+        if (on) flash('compare: pick a second tab');
+        renderCompare();
+      }}
       strip.addEventListener('click', e => {{
         const t = e.target.closest('button');
         if (!t || t.disabled) return;
+        if (t.classList.contains('dcmp')) {{ setCompare(!cmp.on); return; }}
+        if (cmp.on) {{
+          if (t.classList.contains('dnav')) return;
+          const i = +t.dataset.i;
+          if (DOCS[i].pending) {{ flash('that variant is still being written', 'error'); return; }}
+          if (cmp.picks.includes(i)) cmp.picks = cmp.picks.filter(x => x !== i);
+          else cmp.picks = cmp.picks.length < 2 ? [...cmp.picks, i] : [cmp.picks[0], i];
+          renderCompare();
+          return;
+        }}
         if (t.classList.contains('dnav')) go(DOCS[at + (t.textContent === '‹' ? -1 : 1)]);
         else if (!t.classList.contains('on')) go(DOCS[+t.dataset.i]);
+      }});
+      document.addEventListener('keydown', e => {{   // Esc leaves the comparison (unless typing)
+        if (e.key === 'Escape' && cmp.on && !(document.activeElement && document.activeElement.isContentEditable)) setCompare(false);
       }});
       document.body.classList.add('has-tabs');
     }}

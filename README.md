@@ -171,7 +171,10 @@ back to the `.md` only when you press **Save**.
   Clicking a node in another member opens it there (`?doc=<name>&at=<n>`).
   Above the outline a **tab strip** — Original, Variant 1, Variant 2 …, with
   ‹ › to step — switches between the members at every level, keeping the
-  level you are on; a variant being written shows as an italic tab. The level switch is sized by the whole
+  level you are on; a variant being written shows as an italic tab. The
+  strip's **Compare** toggle (always there) turns the tabs into picks: this
+  document is picked first, pick a second and the two skeletons open side by
+  side, read-only, following the level switch; Esc or Compare again returns. The level switch is sized by the whole
   family, so a variant that so far holds only headings still offers the
   base's modes. Serve mode only; needs
   the same model backend as the quill; unsaved edits must be saved first.
