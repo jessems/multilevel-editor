@@ -72,7 +72,7 @@ warning. Save serializes the whole outline from the page and rewrites the
   adding, deleting, and re-indenting bullets — then toggle back to Outline
   (the tree rebuilds, chips recompute) or Save directly. Only the outline body
   is shown; frontmatter stays untouched.
-- **Navigator** (upstream v0.11.0) — a left sidebar (toggle: panel icon, top left) listing the
+- **Navigator** (upstream v0.12.0) — a left sidebar (toggle: panel icon, top left) listing the
   outline as a tree that **descends with the level switch**, like walking
   down a directory: in mode N every node above level N is expanded and the
   level-N nodes sit collapsed, so the top mode shows the lone title, the
