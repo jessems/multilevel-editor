@@ -140,6 +140,19 @@ back to the `.md` only when you press **Save**.
   otherwise the `claude` CLI (Claude Code) on PATH, run tool-less and
   non-interactively in the outline's directory. Model: `--model` (default
   `claude-opus-5`). Serve mode only.
+- **Skeleton variants (button top right of the text)** — "Skeleton
+  variant…" opens a small dialog: type an instruction (the example in the
+  box, e.g. rebuilding the argument in a different legal argumentation
+  style, is what **Use default settings** runs) and **Generate**. The model
+  rewrites the whole skeleton on disk to that instruction — same facts, same
+  placeholders, same language — and the result is saved as a **new file
+  beside the original**, `<outline>.variant-N.md`, with frontmatter recording
+  what it derives from and the instruction used. The original is untouched.
+  Each variant is a skeleton in its own right, with its own `.draft.md` and
+  `.tags.yaml`. The **navigator's top level is the file family**: the
+  skeleton and its variants; the open one expands onto its outline, the
+  others are links (`?doc=<name>`) that load them. Serve mode only; needs
+  the same model backend as the quill; unsaved edits must be saved first.
 - **Nesting rules** — under a paragraph only its written text may nest (a
   childless non-heading bullet); drops never land inside a paragraph; and a
   heading can only be moved under a heading of a shallower level, so a `#`
@@ -157,6 +170,10 @@ back to the `.md` only when you press **Save**.
 - `- ` bullets, 2-space indentation per level. The outline holds headings and
   paragraph topic sentences; written paragraph text is stored beside it in
   `<outline>.draft.md` (see Written paragraphs) and never in the outline.
+- A skeleton's family beside it: `<outline>.variant-N.md` (variants, each
+  with its own `.draft.md` / `.tags.yaml`), `<outline>.tags.yaml`,
+  `<outline>.draft.md`. Start the server on the base skeleton and it serves
+  the whole family.
 - Optional YAML frontmatter is preserved verbatim (never shown or edited).
 - Bullets support minimal inline markdown: `**bold**`, `*italic*`,
   `` `code` ``, and `#`/`##`/`###` prefixes for heading bullets.

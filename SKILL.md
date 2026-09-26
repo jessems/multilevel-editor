@@ -63,6 +63,17 @@ warning. Save serializes the whole outline from the page and rewrites the
   outline's content and keeps `[cite]`-style placeholders, then inserts it as
   written text under the paragraph (staged, ⌘Z undoes, Save writes; earlier
   written text stays below). The view jumps to the written level.
+- **Skeleton variants.** The "Skeleton variant…" button (top right of the
+  text) opens a dialog: an instruction box with an example (a different
+  legal argumentation style), **Use default settings** runs the example,
+  **Generate** runs the typed instruction. `POST /variant` has the model
+  rewrite the skeleton on disk to the instruction and writes
+  `<outline>.variant-N.md` beside it (frontmatter: summary, variant_of,
+  variant, title, prompt, created, status: draft); the page then opens it
+  (`?doc=<name>`). Variants are full skeletons with their own draft and tags.
+  The navigator's top level lists the family (base + variants); the open file
+  expands onto its outline. Start the server on the base skeleton; it serves
+  the family and refuses any other path. Unsaved edits block generation.
 - **Drag to move**: a grip (`⋮⋮`) appears left of a bullet on hover; dragging
   it moves the bullet **with its whole subtree** (indicator line shows the
   before/after drop position; the bullet adopts the target's indent). Chips

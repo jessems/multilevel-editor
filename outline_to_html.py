@@ -38,6 +38,8 @@ import shutil
 import subprocess
 import sys
 import webbrowser
+from datetime import date
+from urllib.parse import parse_qs, urlparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -511,6 +513,35 @@ PAGE = """<!DOCTYPE html>
   #insertHint:hover .plus {{ background:var(--acc); color:var(--bg); }}
   body.readonly #insertHint {{ display:none; }}
 
+  /* ---------- main tools (top right of the reading column) + variant dialog ---------- */
+  .main-tools {{ display:flex; justify-content:flex-end; margin:-6px 0 14px; }}
+  .main-tools button {{ font:500 12.5px/1 var(--sans); padding:6px 11px; cursor:pointer;
+                        color:var(--ink); background:var(--btn); border:1px solid var(--line);
+                        border-radius:6px; }}
+  .main-tools button:hover {{ border-color:var(--mut); }}
+  body.readonly .main-tools, body.mdmode .main-tools {{ display:none; }}
+  #variantDlg {{ border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink);
+                 padding:20px 22px 18px; width:min(560px, 92vw); box-sizing:border-box;
+                 font:14px/1.5 var(--sans); box-shadow:0 18px 50px rgba(0,0,0,.25); }}
+  #variantDlg::backdrop {{ background:rgba(0,0,0,.35); }}
+  #variantDlg h2 {{ margin:0 0 6px; font:600 16px/1.3 var(--sans); }}
+  .dlg-sub {{ margin:0 0 12px; color:var(--mut); font-size:13px; }}
+  #variantPrompt {{ width:100%; box-sizing:border-box; font:15px/1.55 var(--serif); color:var(--ink);
+                    background:var(--editbg); border:1px solid var(--line); border-radius:8px;
+                    padding:10px 12px; resize:vertical; }}
+  #variantPrompt::placeholder {{ color:var(--mut); opacity:.9; }}
+  #variantPrompt:focus {{ outline:2px solid var(--acc); outline-offset:-1px; }}
+  .dlg-hint {{ margin:6px 0 0; color:var(--mut); font-size:12px; }}
+  .dlg-err {{ margin:8px 0 0; color:var(--err); font-size:13px; min-height:1.2em; }}
+  .dlg-actions {{ display:flex; gap:8px; align-items:center; margin-top:14px; }}
+  .dlg-spacer {{ flex:1 1 auto; }}
+  .dlg-actions button {{ font:500 12.5px/1 var(--sans); padding:7px 12px; cursor:pointer;
+                         color:var(--ink); background:var(--btn); border:1px solid var(--line); border-radius:6px; }}
+  .dlg-actions button:hover {{ border-color:var(--mut); }}
+  .dlg-actions button.primary {{ background:var(--acc); color:var(--bg); border-color:var(--acc); font-weight:600; }}
+  .dlg-actions button:disabled {{ opacity:.5; cursor:progress; }}
+  #variantDlg.busy .dlg-err {{ color:var(--mut); }}
+
   /* ---------- navigator (left sidebar): the outline's levels as a descending tree ---------- */
   :root {{ --navw:264px; --hdr-h:52px; }}
   #navBtn {{ width:30px; padding:5px 0; align-self:center; }}
@@ -545,6 +576,15 @@ PAGE = """<!DOCTYPE html>
             text-align:left; padding:3px 4px; font:inherit; color:var(--ink);
             white-space:nowrap; overflow:hidden; text-overflow:ellipsis; border-radius:4px; }}
   .nlabel.nh1, .nlabel.nh2 {{ font-weight:600; }}
+  /* the top level of the navigator is the FILE family: the skeleton and its variants */
+  #nav li.ndoc {{ margin-top:2px; }}
+  #nav li.ndoc > .nrow > .nlabel {{ font-weight:600; }}
+  #nav li.ndoc > .nrow > a.nlabel {{ text-decoration:none; display:block; }}
+  #nav li.ndoc.current-doc > .nrow {{ background:var(--chip); }}
+  #nav li.ndoc > ul {{ padding-left:14px; margin-top:2px; }}
+  .ndocicon::before {{ content:''; display:inline-block; width:13px; height:13px; margin:5px 0 0 1px;
+    background:var(--mut); -webkit-mask:var(--icon) center/contain no-repeat; mask:var(--icon) center/contain no-repeat;
+    --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpath d='M14 2v6h6M16 13H8M16 17H8M10 9H8'/%3E%3C/svg%3E"); }}
   .nlabel.npara {{ color:var(--mut); }}
   .ncaret:focus-visible, .nlabel:focus-visible {{ outline:2px solid var(--acc); outline-offset:-2px; }}
   .nnum {{ font:600 10.5px var(--sans); font-variant-numeric:tabular-nums; margin-right:6px; }}
@@ -597,14 +637,32 @@ PAGE = """<!DOCTYPE html>
 </aside>
 <nav id="nav" aria-label="navigator"><div class="nav-title">Navigator</div><ul id="navTree"></ul></nav>
 <main>
+<div class="main-tools"><button id="variantBtn" type="button" title="generate a skeleton variant as a new file">Skeleton variant…</button></div>
 <ul id="tree">{tree}</ul>
 <textarea id="mdview" spellcheck="false"></textarea>
 </main>
+<dialog id="variantDlg" aria-labelledby="variantTitle">
+  <h2 id="variantTitle">Generate a skeleton variant</h2>
+  <p class="dlg-sub">The model rebuilds this skeleton — same facts, same placeholders — following your
+    instruction. The result is saved as a new file beside this one and opened; this skeleton is not changed.</p>
+  <textarea id="variantPrompt" rows="5" spellcheck="true" placeholder="{default_instruction}"></textarea>
+  <p class="dlg-hint">Leave the box empty to use the example above.</p>
+  <p class="dlg-err" id="variantErr" role="alert"></p>
+  <div class="dlg-actions">
+    <button type="button" id="variantCancel">Cancel</button>
+    <span class="dlg-spacer"></span>
+    <button type="button" id="variantDefault" title="generate with the example instruction">Use default settings</button>
+    <button type="button" id="variantGo" class="primary">Generate</button>
+  </div>
+</dialog>
 <div id="insertHint"><button class="plus" type="button" title="insert bullet" aria-label="insert bullet">+</button></div>
 <script>
   const EDITABLE = {editable};
   const FILEHASH = "{filehash}";
   const SOURCE = {source_js};
+  const DOC = {doc_js};                        // the family member this page edits
+  const DOCS = {docs_json};                    // the skeleton and its variants
+  const DEFAULT_INSTRUCTION = {default_instruction_js};
   const SCHEME = "{scheme}";
   const ORPHANS = {orphans};
   const DRAFT_ORPHANS = {draft_orphans};   // written text whose paragraph is gone — sent back on save, kept in the draft
@@ -697,7 +755,25 @@ PAGE = """<!DOCTYPE html>
       return item;
     }}
     const top = nav.scrollTop;
-    navTree.replaceChildren(...kidsOf(tree).map(build));
+    // top level: the file family — this document opens onto its outline,
+    // the others are links that load them (unsaved edits prompt on the way out)
+    const outline = kidsOf(tree).map(build);
+    navTree.replaceChildren(...DOCS.map(d => {{
+      const item = document.createElement('li');
+      item.className = 'ndoc' + (d.current ? ' current-doc open' : '');
+      const row = document.createElement('div');
+      row.className = 'nrow';
+      const icon = document.createElement('span');
+      icon.className = 'nspace ndocicon';
+      const label = document.createElement(d.current ? 'span' : 'a');
+      label.className = 'nlabel';
+      label.textContent = d.label; label.title = d.name;
+      if (!d.current) label.href = '?doc=' + encodeURIComponent(d.name);
+      row.append(icon, label);
+      item.append(row);
+      if (d.current) {{ const ul = document.createElement('ul'); ul.append(...outline); item.append(ul); }}
+      return item;
+    }}));
     nav.scrollTop = top;
   }}
   function revealBullet(li) {{
@@ -716,7 +792,7 @@ PAGE = """<!DOCTYPE html>
   }}
   navTree.addEventListener('click', e => {{
     const item = e.target.closest('li');
-    if (!item) return;
+    if (!item || item.classList.contains('ndoc')) return;   // file rows: links do the work
     if (e.target.closest('.ncaret')) {{
       const open = !item.classList.contains('open');
       item.classList.toggle('open', open);
@@ -1246,7 +1322,7 @@ PAGE = """<!DOCTYPE html>
     try {{
       const r = await fetch('/generate', {{ method: 'POST',
         headers: {{'Content-Type': 'application/json'}},
-        body: JSON.stringify({{ outline: toMarkdown(serialize()), target: span.dataset.raw, path, existing }}) }});
+        body: JSON.stringify({{ doc: DOC, outline: toMarkdown(serialize()), target: span.dataset.raw, path, existing }}) }});
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || r.status);
       const text = (data.text || '').replace(/\\s+/g, ' ').trim();
@@ -1269,6 +1345,38 @@ PAGE = """<!DOCTYPE html>
       gen.classList.remove('busy'); gen.title = 'write this paragraph';
     }}
   }}
+
+  // ---- skeleton variant: instruction dialog → /variant → open the new file ----
+  const variantDlg = document.getElementById('variantDlg');
+  const variantPrompt = document.getElementById('variantPrompt');
+  const variantErr = document.getElementById('variantErr');
+  document.getElementById('variantBtn').addEventListener('click', () => {{
+    if (dirty) {{ flash('save your changes first — a variant is built from the file on disk', 'error'); return; }}
+    variantErr.textContent = ''; variantDlg.classList.remove('busy');
+    variantDlg.showModal(); variantPrompt.focus();
+  }});
+  document.getElementById('variantCancel').addEventListener('click', () => variantDlg.close());
+  async function makeVariant(instruction) {{
+    const buttons = variantDlg.querySelectorAll('button');
+    buttons.forEach(b => b.disabled = true); variantDlg.classList.add('busy');
+    variantErr.textContent = 'generating — the model rewrites the whole skeleton; this can take a minute or two…';
+    try {{
+      const r = await fetch('/variant', {{ method: 'POST', headers: {{'Content-Type': 'application/json'}},
+        body: JSON.stringify({{ doc: DOC, instruction }}) }});
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || r.status);
+      variantErr.textContent = 'saved as ' + data.name + ' — opening…';
+      location.href = '?doc=' + encodeURIComponent(data.name);
+    }} catch (err) {{
+      variantDlg.classList.remove('busy');
+      variantErr.textContent = 'could not generate the variant: ' + err.message;
+      buttons.forEach(b => b.disabled = false);
+    }}
+  }}
+  document.getElementById('variantDefault').addEventListener('click', () => makeVariant(DEFAULT_INSTRUCTION));
+  document.getElementById('variantGo').addEventListener('click', () =>
+    makeVariant(variantPrompt.value.trim() || DEFAULT_INSTRUCTION));
+  variantDlg.addEventListener('cancel', e => {{ if (variantDlg.classList.contains('busy')) e.preventDefault(); }});
 
   // ---- delegated events (survive tree rebuilds) ----
   tree.addEventListener('click', e => {{
@@ -1604,7 +1712,7 @@ PAGE = """<!DOCTYPE html>
     try {{
       const r = await fetch('/save', {{ method: 'POST',
         headers: {{'Content-Type': 'application/json'}},
-        body: JSON.stringify({{ hash: FILEHASH, scheme: settings.scheme, bullets,
+        body: JSON.stringify({{ doc: DOC, hash: FILEHASH, scheme: settings.scheme, bullets,
                                 draft_orphans: DRAFT_ORPHANS }}) }});
       if (!r.ok) throw new Error((await r.json()).error || r.status);
       dirty = false;
@@ -1781,6 +1889,129 @@ def write_draft(source: Path, draft_lines, orphans: dict) -> None:
     draft_path(source).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+# ---------- skeleton variants: sibling files, each with its own draft ----------
+# A variant of the skeleton X.md is X.variant-N.md beside it (its tags and
+# draft follow the same rule: X.variant-N.tags.yaml, X.variant-N.draft.md).
+# The server is started on the base skeleton and serves the whole family;
+# the navigator lists the family as its top level and `?doc=<name>` opens a
+# member. A variant is produced by the model from the skeleton on disk plus
+# an instruction, validated as an outline, and written with frontmatter that
+# records its provenance and the instruction used.
+VARIANT_RE = re.compile(r"\.variant-(\d+)\.md$")
+DEFAULT_VARIANT_INSTRUCTION = (
+    "Rebuild the skeleton in a different legal argumentation style: lead with the strongest "
+    "point, organise the sections by the rule each breach engages rather than by chronology, "
+    "and make every paragraph's topic sentence a single assertion a reader could accept on its own. "
+    "Keep every fact and every [cite] placeholder."
+)
+VARIANT_PROMPT = """You are producing a VARIANT of a document skeleton (a reverse outline).
+
+A skeleton is a nested bullet list: '- ' bullets, two spaces of indentation per
+level; heading bullets start with #, ## or ###; the bullets under a heading are
+the paragraphs, each given as its topic sentence; a bracketed bullet such as
+[parties block: ...] is a placeholder and stays as it is.
+
+INSTRUCTION FOR THE VARIANT
+{instruction}
+
+RULES
+- Same subject, same facts, same evidence, same language as the original. Use
+  only what the skeleton states; keep every bracketed placeholder such as
+  [cite] with the sentence it belongs to; invent nothing.
+- Every paragraph of the original keeps a counterpart, merged or split as the
+  instruction requires; never drop content silently.
+- Output the COMPLETE variant skeleton in exactly the original format, with
+  the single top-level # title bullet (rephrasing allowed). No written text
+  under paragraphs, no numbering labels.
+- Reply with the bullet list only: no preamble, no code fence, no commentary.
+
+ORIGINAL SKELETON
+{skeleton}
+"""
+
+
+def strip_frontmatter(text: str) -> str:
+    lines = text.splitlines()
+    if lines and lines[0].strip() == "---":
+        for i in range(1, len(lines)):
+            if lines[i].strip() == "---":
+                return "\n".join(lines[i + 1:]).strip("\n")
+    return text
+
+
+def read_frontmatter(text: str) -> dict:
+    """Flat 'key: value' lines of the frontmatter (block scalars skipped)."""
+    fm = {}
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return fm
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        m = re.match(r"^([A-Za-z_][\w-]*):\s*(.*)$", line)
+        if m and m.group(2).strip() not in ("", "|", ">"):
+            fm[m.group(1)] = m.group(2).strip()
+    return fm
+
+
+def family_of(base: Path):
+    """The base skeleton and its variants, in variant order."""
+    pat = re.compile(r"^" + re.escape(base.stem) + r"\.variant-(\d+)\.md$")
+    found = []
+    for p in base.parent.iterdir():
+        m = pat.match(p.name)
+        if m:
+            found.append((int(m.group(1)), p))
+    return [base] + [p for _, p in sorted(found)]
+
+
+def doc_label(p: Path, base: Path) -> str:
+    fm = read_frontmatter(p.read_text(encoding="utf-8"))
+    if fm.get("title"):
+        return fm["title"]
+    m = VARIANT_RE.search(p.name)
+    return f"Variant {m.group(1)}" if m else base.stem
+
+
+def parse_variant_reply(text: str):
+    """Keep the bullet lines of the model's reply, normalise indentation to
+    two spaces per level, and insist on an outline that starts with a heading."""
+    raw = []
+    for line in text.splitlines():
+        if line.strip().startswith("```"):
+            continue
+        m = re.match(r"^(\s*)[-*] (.+)$", line.rstrip())
+        if m:
+            raw.append((len(m.group(1).replace("\t", "    ")), m.group(2).strip()))
+        elif raw and line.strip() and not line.lstrip().startswith(("-", "*")):
+            raw[-1] = (raw[-1][0], raw[-1][1] + " " + line.strip())   # continuation line
+    if not raw:
+        raise RuntimeError("the model returned no bullets")
+    levels = {ind: i for i, ind in enumerate(sorted({ind for ind, _ in raw}))}
+    lines = ["  " * levels[ind] + "- " + txt for ind, txt in raw]
+    tree = parse_outline("\n".join(lines))
+    if not tree or not is_heading_raw(tree[0]["raw"]):
+        raise RuntimeError("the model did not return a skeleton (it must start with a # heading bullet)")
+    return lines
+
+
+def write_variant(base: Path, derived_from: Path, instruction: str, lines) -> Path:
+    n = 1 + max([int(VARIANT_RE.search(p.name).group(1)) for p in family_of(base)[1:]] or [0])
+    path = base.with_name(f"{base.stem}.variant-{n}.md")
+    short = re.sub(r"\s+", " ", instruction).strip()
+    fm = ["---",
+          f"summary: Skeleton variant {n} of {base.name} — {short[:140]}",
+          f"variant_of: {derived_from.name}",
+          f"variant: {n}",
+          f"title: Variant {n}",
+          "prompt: |"] + ["  " + l for l in instruction.strip().splitlines()] + [
+          f"created: {date.today().isoformat()}",
+          "status: draft",
+          "---", ""]
+    path.write_text("\n".join(fm + list(lines)) + "\n", encoding="utf-8")
+    return path
+
+
 def combined_hash(source: Path) -> str:
     """Conflict guard spans the outline AND its sidecars (tags, draft)."""
     parts = [source.read_text(encoding="utf-8")]
@@ -1789,7 +2020,10 @@ def combined_hash(source: Path) -> str:
     return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()
 
 
-def build_page(source: Path, editable: bool) -> str:
+def build_page(source: Path, editable: bool, base: Path = None) -> str:
+    base = base or source
+    family = family_of(base) if editable else [source]
+    docs = [{"name": p.name, "label": doc_label(p, base), "current": p == source} for p in family]
     text = source.read_text(encoding="utf-8")
     meta = load_meta(source)
     tree = parse_outline(text)
@@ -1823,8 +2057,12 @@ def build_page(source: Path, editable: bool) -> str:
     assign_numbers(tree)
     body = "\n".join(render_node(n) for n in tree)
     return PAGE.format(
-        title=source.stem,
+        title=doc_label(source, base) if source != base else source.stem,
         source=source.name,
+        doc_js=json.dumps(source.name),
+        docs_json=json.dumps(docs),
+        default_instruction=html.escape(DEFAULT_VARIANT_INSTRUCTION, quote=True),
+        default_instruction_js=json.dumps(DEFAULT_VARIANT_INSTRUCTION),
         source_js=json.dumps(source.name),
         tree=body,
         editable="true" if editable else "false",
@@ -1840,6 +2078,17 @@ def build_page(source: Path, editable: bool) -> str:
 
 
 def serve(source: Path, port: int, open_browser: bool = True, model: str = "claude-opus-5"):
+    base = source
+
+    def resolve(name):
+        """A member of the family by file name — never an arbitrary path."""
+        if not name:
+            return base
+        for p in family_of(base):
+            if p.name == name:
+                return p
+        raise FileNotFoundError(f"{name} is not the skeleton or one of its variants")
+
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code, body, ctype="text/html; charset=utf-8"):
             data = body.encode("utf-8")
@@ -1850,15 +2099,36 @@ def serve(source: Path, port: int, open_browser: bool = True, model: str = "clau
             self.wfile.write(data)
 
         def do_GET(self):
-            if self.path in ("/", "/index.html"):
-                self._send(200, build_page(source, editable=True))
+            url = urlparse(self.path)
+            if url.path in ("/", "/index.html"):
+                try:
+                    doc = resolve(parse_qs(url.query).get("doc", [""])[0])
+                except FileNotFoundError as e:
+                    self._send(404, str(e), "text/plain")
+                    return
+                self._send(200, build_page(doc, editable=True, base=base))
             else:
                 self._send(404, "not found", "text/plain")
 
         def do_POST(self):
+            if self.path == "/variant":
+                try:
+                    req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                    src = resolve(req.get("doc"))
+                    instruction = (req.get("instruction") or "").strip() or DEFAULT_VARIANT_INSTRUCTION
+                    skeleton = strip_frontmatter(src.read_text(encoding="utf-8"))
+                    reply = generate_text(VARIANT_PROMPT.format(instruction=instruction, skeleton=skeleton),
+                                          model, src.parent)
+                    path = write_variant(base, src, instruction, parse_variant_reply(reply))
+                    self._send(200, json.dumps({"name": path.name}), "application/json")
+                    print(f"  variant: {path.name} from {src.name}", flush=True)
+                except Exception as e:  # noqa: BLE001 — report any failure to the client
+                    self._send(500, json.dumps({"error": str(e)}), "application/json")
+                return
             if self.path == "/generate":
                 try:
                     req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                    source = resolve(req.get("doc"))
                     text = generate_text(build_generate_prompt(req), model, source.parent)
                     self._send(200, json.dumps({"text": text}), "application/json")
                     print(f"  wrote: {req.get('target', '')[:60]!r} ({len(text)} chars)")
@@ -1870,6 +2140,7 @@ def serve(source: Path, port: int, open_browser: bool = True, model: str = "clau
                 return
             try:
                 req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                source = resolve(req.get("doc"))
                 if combined_hash(source) != req["hash"]:
                     self._send(409, json.dumps(
                         {"error": "file changed on disk — refresh the page (your staged edits will be lost)"}),
