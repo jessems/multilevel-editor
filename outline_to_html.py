@@ -217,12 +217,23 @@ def render_node(node) -> str:
     )
 
 
+DARK_VARS = (
+    "--bg:#1c1b19; --ink:#e7e2d8; --mut:#9d968a; --acc:#d2ab6a; --line:#37342f; "
+    "--hover:#26241f; --chip:#33302a; --codebg:#2b2925; --editbg:#232119; --btn:#26241f; "
+    "--sel:#4a3f2a; --ok:#8fc48f; --err:#e08b7d; "
+    "--t1:#82b6d6; --t2:#d2ab6a; --t3:#8fc48f; --t4:#d49bd4;"
+)
+
 PAGE = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title}</title>
+<script>
+  try {{ const t = localStorage.getItem('multilevel-editor.theme');
+        if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; }} catch {{}}
+</script>
 <style>
   :root {{
     color-scheme: light dark;
@@ -234,14 +245,12 @@ PAGE = """<!DOCTYPE html>
     --sel:#e9dcc2; --ok:#3d7a3d; --err:#a33b2e;
     --t1:#3f6e8e; --t2:#8a5a24; --t3:#3d7a3d; --t4:#8f4a8f;
   }}
+  /* dark palette: follows the OS unless the header toggle pinned a theme (html[data-theme]) */
   @media (prefers-color-scheme: dark) {{
-    :root {{
-      --bg:#1c1b19; --ink:#e7e2d8; --mut:#9d968a; --acc:#d2ab6a; --line:#37342f;
-      --hover:#26241f; --chip:#33302a; --codebg:#2b2925; --editbg:#232119; --btn:#26241f;
-      --sel:#4a3f2a; --ok:#8fc48f; --err:#e08b7d;
-      --t1:#82b6d6; --t2:#d2ab6a; --t3:#8fc48f; --t4:#d49bd4;
-    }}
+    :root:not([data-theme="light"]) {{ {dark_vars} }}
   }}
+  :root[data-theme="dark"] {{ {dark_vars} color-scheme:dark; }}
+  :root[data-theme="light"] {{ color-scheme:light; }}
   html {{ -webkit-text-size-adjust:100%; }}
   body {{ margin:0; background:var(--bg); color:var(--ink);
          font:17px/1.65 var(--serif);
@@ -250,31 +259,89 @@ PAGE = """<!DOCTYPE html>
   ::selection {{ background:var(--sel); }}
 
   /* ---------- header chrome (UI face, not reading face) ---------- */
-  header {{ position:sticky; top:0; z-index:2; background:var(--bg);
-           border-bottom:1px solid var(--line); padding:10px 56px 10px 24px;
-           display:flex; flex-wrap:wrap; gap:8px 12px; align-items:baseline;
-           font:13px/1.4 var(--sans); }}
-  header h1 {{ font:600 15px/1.4 var(--serif); margin:0; letter-spacing:-0.005em; }}
-  header .src {{ color:var(--mut); font-size:12.5px; }}
-  header .hint {{ color:var(--mut); font-size:12.5px; font-style:italic; }}
-  header button {{ font:500 12.5px/1 var(--sans); padding:6px 11px; cursor:pointer;
-                  color:var(--ink); background:var(--btn); border:1px solid var(--line);
-                  border-radius:6px; }}
-  header button:hover {{ border-color:var(--mut); }}
-  header button:focus-visible {{ outline:2px solid var(--acc); outline-offset:2px; }}
-  #saveBtn {{ margin-left:auto; padding:6px 16px; font-weight:600; }}
-  #saveBtn:disabled {{ opacity:.45; cursor:default; }}
-  #saveBtn.dirty {{ background:var(--acc); color:var(--bg); border-color:var(--acc); }}
-  body.readonly #saveBtn, body.readonly #mdBtn {{ display:none; }}
+  /* one slim rail in three columns: the document on the left, the level switch
+     in the true page centre (equal 1fr sides), the actions on the right. The
+     status message drops out of the rail as a toast; the usage notes live in
+     a key card behind the ? button. */
+  header {{ position:sticky; top:0; z-index:2; box-sizing:border-box;
+           display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);
+           align-items:center; gap:12px; padding:8px 14px; min-height:54px;
+           background:color-mix(in srgb, var(--bg) 86%, transparent);
+           -webkit-backdrop-filter:blur(12px) saturate(1.3); backdrop-filter:blur(12px) saturate(1.3);
+           border-bottom:1px solid var(--line); font:13px/1.4 var(--sans); }}
+  .hl {{ grid-column:1; display:flex; align-items:center; gap:10px; min-width:0; }}
+  .hr {{ grid-column:3; justify-self:end; display:flex; align-items:center; gap:4px; }}
+  .doc {{ display:flex; flex-direction:column; min-width:0; line-height:1.2; }}
+  header h1 {{ font:600 15px/1.25 var(--serif); margin:0; letter-spacing:-0.005em;
+              white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+  header .src {{ font:500 10.5px/1.3 var(--mono); color:var(--mut); letter-spacing:.02em;
+                white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+  header button {{ font:500 12.5px/1 var(--sans); padding:0 10px; height:30px; cursor:pointer;
+                  color:var(--ink); background:transparent; border:1px solid transparent;
+                  border-radius:7px; transition:background .12s, border-color .12s, color .12s; }}
+  header button:hover {{ background:var(--hover); }}
+  header button:focus-visible {{ outline:2px solid var(--acc); outline-offset:1px; }}
+  .hr .sep {{ width:1px; height:18px; background:var(--line); margin:0 6px; }}
+  #saveBtn {{ display:inline-flex; align-items:center; gap:8px; padding:0 12px; font-weight:600;
+             border-color:var(--line); background:var(--btn); }}
+  #saveBtn kbd {{ font:500 10.5px/1 var(--sans); color:var(--mut); letter-spacing:.04em; }}
+  #saveBtn:disabled {{ opacity:.5; cursor:default; background:transparent; }}
+  #saveBtn:disabled kbd {{ display:none; }}
+  #saveBtn.dirty {{ background:var(--acc); color:var(--bg); border-color:var(--acc);
+                   box-shadow:0 1px 0 rgba(0,0,0,.08), 0 4px 12px -6px var(--acc); }}
+  #saveBtn.dirty kbd {{ color:inherit; opacity:.75; }}
+  #saveBtn.dirty::before {{ content:''; width:6px; height:6px; border-radius:50%;
+                           background:currentColor; animation:pulse 1.8s ease-in-out infinite; }}
+  @keyframes pulse {{ 50% {{ opacity:.35; }} }}
+  body.readonly #saveBtn, body.readonly #mdBtn, body.readonly #helpBtn,
+  body.readonly .hr .sep {{ display:none; }}
+  /* icon buttons: a masked glyph in currentColor */
+  .ibtn {{ width:30px; padding:0 !important; color:var(--mut) !important; }}
+  .ibtn:hover {{ color:var(--ink) !important; }}
+  .ibtn::before {{ content:''; display:block; width:16px; height:16px; margin:auto;
+                  background:currentColor; -webkit-mask:var(--icon) center/contain no-repeat;
+                  mask:var(--icon) center/contain no-repeat; }}
+  #mdBtn {{ color:var(--mut); }}
+  #mdBtn:hover, body.mdmode #mdBtn {{ color:var(--ink); }}
+  body.mdmode #mdBtn {{ background:var(--chip); }}
+  #helpBtn {{ --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01'/%3E%3C/svg%3E"); }}
+  /* light/dark toggle — shows the theme a click switches TO: a moon on light, a sun on dark */
+  #themeBtn {{ --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z'/%3E%3C/svg%3E"); }}
+  html.theme-dark #themeBtn {{ --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='5'/%3E%3Cpath d='M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42'/%3E%3C/svg%3E"); }}
+  #helpBtn[aria-expanded="true"] {{ color:var(--acc) !important; background:var(--hover); }}
+  /* the key card */
+  #help {{ position:absolute; top:calc(100% + 8px); right:14px; width:320px; max-width:calc(100vw - 28px);
+          box-sizing:border-box; padding:14px 16px 12px; background:var(--bg); color:var(--ink);
+          border:1px solid var(--line); border-radius:10px; z-index:7;
+          box-shadow:0 12px 32px -12px rgba(0,0,0,.28), 0 2px 6px -2px rgba(0,0,0,.08);
+          transform-origin:top right; animation:cardin .14s ease-out; }}
+  #help[hidden] {{ display:none; }}
+  @keyframes cardin {{ from {{ opacity:0; transform:translateY(-4px) scale(.98); }} }}
+  #help h2 {{ font:600 10.5px/1 var(--sans); letter-spacing:.1em; text-transform:uppercase;
+             color:var(--mut); margin:0 0 10px; }}
+  #help ul {{ list-style:none; margin:0; padding:0; border-left:none; font:13px/1.45 var(--sans); }}
+  #help li {{ padding:5px 0; border-top:1px dashed var(--line); }}
+  #help li:first-child {{ border-top:none; }}
+  #help kbd, #help b {{ font:600 11px/1 var(--sans); padding:3px 6px; border-radius:4px;
+                       background:var(--chip); border-bottom:1px solid var(--line);
+                       font-variant-numeric:tabular-nums; }}
+  #help b {{ font-weight:600; background:none; border:none; padding:0; }}
+  /* the status message drops out of the rail as a toast, centred under the switch */
+  #status {{ position:absolute; top:calc(100% + 8px); left:50%; transform:translateX(-50%);
+            font:500 12.5px/1 var(--sans); color:var(--ink); background:var(--bg);
+            border:1px solid var(--line); border-radius:999px; padding:7px 14px;
+            box-shadow:0 8px 20px -10px rgba(0,0,0,.3); white-space:nowrap; z-index:4;
+            pointer-events:none; animation:toast .18s ease-out; }}
+  #status:empty {{ display:none; }}
+  @keyframes toast {{ from {{ opacity:0; transform:translate(-50%, -6px); }} }}
+  #status.saved {{ color:var(--ok); border-color:color-mix(in srgb, var(--ok) 45%, var(--line)); }}
+  #status.error {{ color:var(--err); border-color:color-mix(in srgb, var(--err) 45%, var(--line)); }}
   /* level switch — one mode per depth the outline uses: N shows the top N levels.
-     Its own row at the bottom of the header, centred on the page: the header
-     pads 56px right for the pinned cog vs 24px left, so the row extends 32px
-     into that padding to make its centre the page centre. */
-  .levels-row {{ order:99; flex:0 0 calc(100% + 32px); display:flex; justify-content:center;
-                 margin:2px -32px 0 0; }}
-  .levels-row:has(#levels:empty), body.mdmode .levels-row {{ display:none; }}
-  #levels {{ display:inline-flex; align-items:stretch; border:1px solid var(--line);
-             border-radius:6px; overflow:hidden; }}
+     The centre column of the header grid, so it sits on the page centre. */
+  .levels-row {{ grid-column:2; display:flex; justify-content:center; }}
+  .levels-row:has(#levels:empty), body.mdmode .levels-row {{ visibility:hidden; }}
+  #levels {{ display:inline-flex; align-items:stretch; gap:2px; padding:2px;
+             background:var(--hover); border:1px solid var(--line); border-radius:9px; }}
   li.lvhide {{ display:none !important; }}                 /* below the chosen level */
   li.lvhide[data-pending-new], li.lvhide:has(> .row .txt[contenteditable="true"]) {{
     display:list-item !important; }}                       /* …but never while being edited */
@@ -282,15 +349,13 @@ PAGE = """<!DOCTYPE html>
   li.lvcut > .row .caret::before {{ width:5px; height:5px; border:0; border-radius:50%;
     background:var(--mut); opacity:.75; transform:none; position:relative; top:-1px; }}
   li.lvcut > .row.numbered .caret::before {{ display:none; }}
-  #levels button {{ border:none; border-radius:0; padding:5px 10px; min-width:30px; }}
-  #levels button svg {{ display:block; width:20px; height:20px; margin:0 auto; }}
-  #levels button + button {{ border-left:1px solid var(--line); }}
-  #levels button:hover {{ background:var(--hover); }}
-  #levels button.on {{ background:var(--acc); color:var(--bg); }}
+  #levels button {{ border:none; border-radius:7px; height:28px; padding:0 9px; min-width:34px;
+                   color:var(--mut); }}
+  #levels button svg {{ display:block; width:18px; height:18px; margin:0 auto; }}
+  #levels button:hover {{ background:var(--bg); color:var(--ink); }}
+  #levels button.on {{ background:var(--acc); color:var(--bg);
+                      box-shadow:0 1px 2px rgba(0,0,0,.15), inset 0 1px 0 rgba(255,255,255,.12); }}
   #levels button:focus-visible {{ outline-offset:-2px; }}
-  #status {{ font:12.5px var(--sans); color:var(--mut); min-width:60px; }}
-  #status.saved {{ color:var(--ok); }}
-  #status.error {{ color:var(--err); }}
 
   /* ---------- reading column ---------- */
   main {{ max-width:780px; margin:0 auto; padding:28px 24px 140px; }}
@@ -409,14 +474,7 @@ PAGE = """<!DOCTYPE html>
   body.readonly .creac.empty {{ display:none; }}
 
   /* ---------- settings sidebar (opened from the top-right cog) ---------- */
-  /* pinned to the header corner — flex-wrap must never carry it to the left */
-  #menuBtn {{ width:30px; padding:5px 0; position:absolute; top:9px; right:14px; }}
-  #menuBtn::before {{ content:''; display:inline-block; width:15px; height:15px;
-    vertical-align:middle; background:currentColor;
-    -webkit-mask:var(--icon) center/contain no-repeat;
-    mask:var(--icon) center/contain no-repeat;
-    --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3Cpath d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z'/%3E%3C/svg%3E"); }}
-  #menuBtn:hover::before {{ background:var(--acc); }}
+  #menuBtn {{ --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3Cpath d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z'/%3E%3C/svg%3E"); }}
   body.readonly #menuBtn {{ display:none; }}
   #sidebar {{ position:fixed; top:0; right:0; bottom:0; width:300px; z-index:6;
              background:var(--bg); border-left:1px solid var(--line);
@@ -448,7 +506,25 @@ PAGE = """<!DOCTYPE html>
      row, so revealing controls never changes the text column's width. On
      hover the slot shows a trash; clicking it swaps in a check (delete) and
      a cross (cancel) in the same slot. */
-  .act {{ flex:0 0 80px; display:flex; justify-content:flex-end; gap:4px;
+  /* ---------- right margin: notes beside a paragraph heading ---------- */
+  /* Hung in the page margin, level with the row's first line; when the
+     margin is too narrow (JS sets body.margin-inline) they sit at the end of
+     the row instead, before the action slot. */
+  .row {{ position:relative; }}
+  .margin {{ position:absolute; left:calc(100% + 18px); top:9px; width:max-content;
+            display:flex; flex-direction:column; align-items:flex-start; gap:4px; }}
+  body.margin-inline .margin {{ position:static; order:1; flex:0 0 auto; align-self:baseline; }}
+  /* quiet by default: muted small text behind a tinted icon, no chip;
+     firms up a little while the row is hovered */
+  .mnote {{ display:inline-flex; align-items:center; gap:5px; white-space:nowrap;
+           font:500 11.5px/1 var(--sans); letter-spacing:.01em; color:var(--mut);
+           opacity:.8; transition:opacity .1s; }}
+  .row:hover .mnote {{ opacity:1; }}
+  .mnote::before {{ content:''; flex:0 0 auto; width:12px; height:12px;
+    background:color-mix(in srgb, var(--err) 65%, var(--mut));
+    -webkit-mask:var(--icon) center/contain no-repeat; mask:var(--icon) center/contain no-repeat; }}
+  .mnote.cite::before {{ --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 21c3 0 7-1 7-8V5c0-1.25-.76-2-2-2H4c-1.25 0-2 .75-2 2v6c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 0-1 1v3c0 1 0 1 1 1z'/%3E%3Cpath d='M15 21c3 0 7-1 7-8V5c0-1.25-.76-2-2-2h-4c-1.25 0-2 .75-2 2v6c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z'/%3E%3C/svg%3E"); }}
+  .act {{ order:2; flex:0 0 80px; display:flex; justify-content:flex-end; gap:4px;
           padding:5px 2px; border-radius:6px; }}
   .row:hover > .act, .row.confirming > .act {{ background:var(--hover); }}
   .act button {{ flex:0 0 auto; width:24px; border:none; background:none; cursor:pointer;
@@ -580,13 +656,8 @@ PAGE = """<!DOCTYPE html>
 
   /* ---------- navigator (left sidebar): the outline's levels as a descending tree ---------- */
   :root {{ --navw:264px; --hdr-h:52px; }}
-  #navBtn {{ width:30px; padding:5px 0; align-self:center; }}
-  #navBtn::before {{ content:''; display:inline-block; width:15px; height:15px;
-    vertical-align:middle; background:currentColor;
-    -webkit-mask:var(--icon) center/contain no-repeat;
-    mask:var(--icon) center/contain no-repeat;
-    --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Cpath d='M9 3v18'/%3E%3C/svg%3E"); }}
-  #navBtn:hover::before, body.nav-open #navBtn::before {{ background:var(--acc); }}
+  #navBtn {{ --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Cpath d='M9 3v18'/%3E%3C/svg%3E"); }}
+  body.nav-open #navBtn {{ color:var(--acc) !important; }}
   #nav {{ position:fixed; left:0; top:var(--hdr-h); bottom:0; width:var(--navw); z-index:1;
          display:none; box-sizing:border-box; overflow-y:auto; padding:14px 8px 40px 10px;
          background:var(--bg); border-right:1px solid var(--line); font:13px/1.35 var(--sans); }}
@@ -635,9 +706,11 @@ PAGE = """<!DOCTYPE html>
 
   @media (max-width: 640px) {{
     body {{ font-size:16px; }}
-    header {{ padding:8px 14px; }}
-    header .hint {{ display:none; }}
-    .levels-row {{ flex-basis:100%; margin-right:0; }}
+    header {{ grid-template-columns:minmax(0,1fr) auto; row-gap:6px; padding:8px 10px; }}
+    .hr {{ grid-column:2; }}
+    .levels-row {{ grid-column:1 / -1; grid-row:2; }}
+    .levels-row:has(#levels:empty), body.mdmode .levels-row {{ display:none; }}
+    #saveBtn kbd, .hr .sep {{ display:none; }}
     main {{ padding:18px 14px 100px; }}
     :root {{ --indent:18px; }}
     .h1 {{ font-size:23px; }}
@@ -647,15 +720,21 @@ PAGE = """<!DOCTYPE html>
 </head>
 <body class="{bodycls}">
 <header>
-  <button id="navBtn" aria-label="navigator" title="navigator" aria-controls="nav" aria-expanded="false"></button>
-  <h1>{title}</h1>
-  <span class="src">{source}</span>
-  <button id="mdBtn">Markdown</button>
-  <span class="hint">{hint}</span>
-  <span id="status"></span>
-  <button id="saveBtn" disabled>Save</button>
-  <button id="menuBtn" aria-label="settings" title="settings"></button>
+  <div class="hl">
+    <button id="navBtn" class="ibtn" aria-label="navigator" title="navigator" aria-controls="nav" aria-expanded="false"></button>
+    <div class="doc"><h1 title="{title}">{title}</h1><span class="src" title="{source}">{source}</span></div>
+  </div>
   <div class="levels-row"><span id="levels" role="group" aria-label="visible levels" title="visible levels"></span></div>
+  <div class="hr">
+    <button id="mdBtn" title="edit the raw markdown">Markdown</button>
+    <button id="helpBtn" class="ibtn" aria-label="how to edit" title="how to edit" aria-controls="help" aria-expanded="false"></button>
+    <button id="themeBtn" class="ibtn" type="button"></button>
+    <span class="sep"></span>
+    <button id="saveBtn" disabled title="write the skeleton and the draft">Save<kbd>⌘S</kbd></button>
+    <button id="menuBtn" class="ibtn" aria-label="settings" title="settings"></button>
+  </div>
+  <span id="status" role="status" aria-live="polite"></span>
+  <div id="help" hidden data-hint="{hint}"><h2>How to edit</h2><ul></ul></div>
 </header>
 <aside id="sidebar" aria-label="settings">
   <div class="sb-head"><h2>Settings</h2><button id="sbClose" aria-label="close">×</button></div>
@@ -718,6 +797,20 @@ PAGE = """<!DOCTYPE html>
   const mdBtn = document.getElementById('mdBtn');
   const status = document.getElementById('status');
   const saveBtn = document.getElementById('saveBtn');
+  // ---- key card: the usage notes, one per line, keys set as <kbd> ----
+  {{
+    const help = document.getElementById('help'), helpBtn = document.getElementById('helpBtn');
+    const esc = t => t.replace(/[&<>]/g, c => ({{ '&':'&amp;', '<':'&lt;', '>':'&gt;' }})[c]);
+    help.querySelector('ul').innerHTML = help.dataset.hint.split(' · ').filter(Boolean)
+      .map(t => '<li>' + esc(t).replace(/⌘[A-Z]|Enter|Shift\\+Tab|\\bTab\\b/g, k => '<kbd>' + k + '</kbd>') + '</li>')
+      .join('').replace(/\\((<kbd>[^<]*<\\/kbd>)\\)/g, '$1');
+    const setHelp = open => {{ help.hidden = !open; helpBtn.setAttribute('aria-expanded', String(open)); }};
+    helpBtn.addEventListener('click', () => setHelp(help.hidden));
+    document.addEventListener('click', e => {{
+      if (!help.hidden && !e.target.closest('#help') && !e.target.closest('#helpBtn')) setHelp(false);
+    }});
+    document.addEventListener('keydown', e => {{ if (e.key === 'Escape' && !help.hidden) setHelp(false); }});
+  }}
 
   // ---- level switch: one mode per heading level, then paragraphs, then text ----
   // A bullet's level is its heading level (#, ##, ### → 1, 2, 3); a
@@ -852,6 +945,7 @@ PAGE = """<!DOCTYPE html>
   const narrowNav = matchMedia('(max-width: 900px)');
   function setNav(open, remember) {{
     document.body.classList.toggle('nav-open', open);
+    fitMargin();
     navBtn.setAttribute('aria-expanded', String(open));
     if (remember) try {{ localStorage.setItem(NAV_KEY, open ? 'open' : 'closed'); }} catch {{}}
   }}
@@ -1123,6 +1217,28 @@ PAGE = """<!DOCTYPE html>
 
   // UI paragraph numbering: bullets directly under a heading bullet, not
   // themselves headings or [placeholders], get sequential chips.
+  // ---- right-margin notes ----
+  // A paragraph heading (numbered row) whose text holds a [cite] placeholder
+  // — [cite], [cite: …] — gets a "Citation needed" badge in the right margin
+  // (×n when there are several). Recomputed with the chips, and live while
+  // the bullet is being edited.
+  const CITE_RE = /\\[cite\\b[^\\]]*\\]/gi;
+  function syncMargin(row, raw) {{
+    const n = row.classList.contains('numbered') ? (raw.match(CITE_RE) || []).length : 0;
+    let m = row.querySelector(':scope > .margin');
+    if (!n) {{ if (m) m.remove(); return; }}
+    if (!m) {{ m = document.createElement('div'); m.className = 'margin'; row.append(m); }}
+    const label = 'Citation needed' + (n > 1 ? ' ×' + n : '');
+    if (m.textContent !== label)
+      m.innerHTML = '<span class="mnote cite" title="this paragraph has ' + n +
+                    ' [cite] placeholder' + (n > 1 ? 's' : '') + '">' + label + '</span>';
+  }}
+  // hang the notes in the margin only when there is room beside the column
+  function fitMargin() {{
+    const col = document.querySelector('main').getBoundingClientRect();
+    document.body.classList.toggle('margin-inline', window.innerWidth - (col.right - 24) < 170);
+  }}
+  window.addEventListener('resize', fitMargin);
   function renumberChips() {{
     let k = 0;
     (function walk(ul, parentHeading) {{
@@ -1149,6 +1265,7 @@ PAGE = """<!DOCTYPE html>
             chip = null;
           }}
           span.closest('.row').classList.toggle('numbered', numbered);
+          if (!span.isContentEditable) syncMargin(span.closest('.row'), raw);
           // numbered rows get the quill (generate written text) before the trash
           const act = li.querySelector(':scope > .row > .act');
           let gen = act && act.querySelector(':scope > .gen');
@@ -1503,10 +1620,14 @@ PAGE = """<!DOCTYPE html>
     const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
     let done = false;
     let suppressBlur = false;
+    const onInput = () => syncMargin(span.closest('.row'), span.textContent);
+    span.addEventListener('input', onInput);
     const cleanup = () => {{ done = true; span.contentEditable = 'false';
       span.classList.remove('editing');
+      span.removeEventListener('input', onInput);
       span.removeEventListener('keydown', onKey); span.removeEventListener('blur', onBlur); }};
     const cancel = () => {{ cleanup(); span.innerHTML = prev;
+      if (span.isConnected) syncMargin(span.closest('.row'), span.dataset.raw);
       const liEl = span.closest('li');
       if (liEl && liEl.dataset.pendingNew) {{ liEl.remove(); renumberChips(); }} }};
     const stage = () => {{
@@ -1748,6 +1869,30 @@ PAGE = """<!DOCTYPE html>
     renumberChips();
     markDirty();
   }});
+
+  // ---- light/dark toggle (header, left of Save) ----
+  // no stored choice = follow the OS; a click pins the opposite of what is showing,
+  // and a pin that lands back on the OS theme is dropped so the page tracks the OS again
+  const THEME_KEY = 'multilevel-editor.theme';
+  const themeBtn = document.getElementById('themeBtn');
+  const osDark = matchMedia('(prefers-color-scheme: dark)');
+  function applyTheme() {{
+    const pinned = document.documentElement.dataset.theme;
+    const dark = pinned ? pinned === 'dark' : osDark.matches;
+    document.documentElement.classList.toggle('theme-dark', dark);
+    const label = dark ? 'switch to light mode' : 'switch to dark mode';
+    themeBtn.title = label; themeBtn.setAttribute('aria-label', label);
+  }}
+  themeBtn.addEventListener('click', () => {{
+    const next = document.documentElement.classList.contains('theme-dark') ? 'light' : 'dark';
+    const follow = (next === 'dark') === osDark.matches;
+    if (follow) delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = next;
+    try {{ follow ? localStorage.removeItem(THEME_KEY) : localStorage.setItem(THEME_KEY, next); }} catch {{}}
+    applyTheme();
+  }});
+  osDark.addEventListener('change', applyTheme);
+  applyTheme();
 
   // ---- settings sidebar (top-right menu) ----
   const sidebar = document.getElementById('sidebar');
@@ -2258,6 +2403,7 @@ def build_page(source: Path, editable: bool, base: Path = None, docs=None) -> st
         tree=body,
         editable="true" if editable else "false",
         bodycls="" if editable else "readonly",
+        dark_vars=DARK_VARS,
         filehash=combined_hash(source),
         scheme=meta["scheme"],
         orphans=orphans,
@@ -2283,6 +2429,7 @@ def build_generating_page(job, base: Path, docs) -> str:
         tree=render_node(placeholder),
         editable="false",
         bodycls="readonly generating",
+        dark_vars=DARK_VARS,
         filehash="",
         scheme="creac",
         orphans=0,

@@ -23,6 +23,13 @@ back to the `.md` only when you press **Save**.
 
 ## Features
 
+- **Citation needed** — a paragraph heading (numbered bullet) whose text
+  holds a `[cite]` placeholder (`[cite]`, `[cite: …]`) gets a quiet
+  *Citation needed* note (quote-mark icon, muted text) in the right margin, level with its first line
+  (*×n* for several). It appears live as you type the placeholder and goes
+  when you remove it; when the margin is too narrow (sidebar open, small
+  window) it sits at the end of the row instead. Display only — nothing is
+  written to the file.
 - **Navigator** — a left sidebar (toggle: panel icon, top left) listing the
   outline as a tree that **descends with the level switch**, like walking
   down a directory: in mode N every node above level N is expanded and the
@@ -35,7 +42,7 @@ back to the `.md` only when you press **Save**.
   the text on wide screens (remembered), an overlay under 900px. Works in
   the static export too.
 - **Collapsible tree** — carets on branch bullets, plus a **level switch**
-  centred at the bottom of the header with one mode per **heading level**
+  centred in the header with one mode per **heading level**
   the outline uses (icon: that many bulleted, stepped-in bars), then one for the
   paragraphs (¶), then one for the written text (lines of prose): `2`
   shows `#` and `##` headings, `3` adds the `###` headings, `4`
@@ -54,7 +61,9 @@ back to the `.md` only when you press **Save**.
   always shown: once staged it follows its level, with a notice if that
   hides it.
 - **Reading typography** — a book-like serif at a comfortable measure, with
-  a dark palette that follows the system colour scheme.
+  a dark palette that follows the system colour scheme; the sun/moon button
+  in the header flips light/dark (also in read-only exports), remembered per
+  browser — flipping back to the system's scheme returns to following it.
 - **Click to edit in place** — the bullet's raw markdown, same font and
   position as the rendered view. Enter or click away stages the edit; Esc
   cancels.
@@ -167,6 +176,10 @@ back to the `.md` only when you press **Save**.
 - **Markdown view** — a header toggle swaps the tree for a raw-markdown
   textarea of the current staged state: bulk-edit, add, delete, re-indent
   bullets, then toggle back or Save directly.
+- **One-row header** — document name and file on the left, the level switch
+  centred, Markdown / help / light-dark / Save / settings on the right; status messages
+  drop below the bar as a toast, and the **?** button opens a key card with
+  the editing gestures and shortcuts.
 - **Save with conflict safety** — the Save button or **Cmd/Ctrl+S** writes the
   staged outline back; the page carries a hash of the file it was built from,
   and if the file changed on disk the save is refused instead of clobbering.

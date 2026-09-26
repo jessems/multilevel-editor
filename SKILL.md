@@ -92,6 +92,16 @@ warning. Save serializes the whole outline from the page and rewrites the
   adding, deleting, and re-indenting bullets — then toggle back to Outline
   (the tree rebuilds, chips recompute) or Save directly. Only the outline body
   is shown; frontmatter stays untouched.
+- **Light/dark toggle** (upstream v0.15.0) — sun/moon icon button in the header, between **?** and
+  Save (the only header action left in read-only exports). Default follows the OS scheme; a click
+  pins the other theme (remembered per browser); flipping back to the OS scheme un-pins it.
+- **Citation needed** (upstream v0.13.0) — a paragraph heading (numbered bullet) whose text
+  holds a `[cite]` placeholder (`[cite]`, `[cite: …]`) gets a quiet
+  *Citation needed* note (quote-mark icon, muted text) in the right margin, level with its first line
+  (*×n* for several). It appears live as you type the placeholder and goes
+  when you remove it; when the margin is too narrow (sidebar open, small
+  window) it sits at the end of the row instead. Display only — nothing is
+  written to the file.
 - **Navigator** (upstream v0.12.0) — a left sidebar (toggle: panel icon, top left) listing the
   outline as a tree that **descends with the level switch**, like walking
   down a directory: in mode N every node above level N is expanded and the
@@ -104,7 +114,7 @@ warning. Save serializes the whole outline from the page and rewrites the
   the text on wide screens (remembered), an overlay under 900px. Works in
   the static export too.
 - **Collapse/expand** via the caret on branch bullets; the **level switch**
-  centred at the bottom of the header has one icon button per heading level
+  centred in the header has one icon button per heading level
   (n bulleted, stepped-in bars), then
   the paragraph level (¶), then the written-text level (prose lines) (`2` = `#`/`##` headings,
   `3` = plus `###`, `4` = paragraphs, `5` = fully written paragraphs — the
