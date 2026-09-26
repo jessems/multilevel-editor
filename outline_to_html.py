@@ -299,7 +299,12 @@ PAGE = """<!DOCTYPE html>
   body.mdmode #tree {{ display:none; }}
   body.mdmode #mdview {{ display:block; }}
 
-  ul {{ list-style:none; margin:0; padding:0 0 0 26px; border-left:1px solid var(--line); }}
+  :root {{ --indent:26px; }}
+  ul {{ list-style:none; margin:0; padding:0 0 0 var(--indent); border-left:1px solid var(--line); }}
+  /* numbered paragraphs form ONE column whatever heading depth they hang
+     under: a paragraph directly under a ## is shifted to where a paragraph
+     under a ### sits (the level switch computes --shift = levels missing) */
+  li.para {{ margin-left:calc(var(--shift, 0) * (var(--indent) + 1px)); }}   /* +1px per skipped list border */
   main > ul {{ border-left:none; padding-left:0; }}
   li {{ margin:0; }}
   /* a row is two boxes: .main (grip, caret/dot, chip, text) and .act (the
@@ -349,7 +354,7 @@ PAGE = """<!DOCTYPE html>
   /* a paragraph's topic sentence is a plain reading line; once it has written
      text under it, it becomes the run-in heading over that prose */
   li.written > .row > .main > .txt {{ font-weight:600; letter-spacing:-0.004em; }}
-  li.written > ul {{ border-left:none; padding-left:26px; }}   /* prose is not a branch */
+  li.written > ul {{ border-left:none; padding-left:var(--indent); }}   /* prose is not a branch */
   li.pbody {{ margin:2px 0 14px; }}
   li.pbody > .row > .main {{ padding-top:2px; padding-bottom:2px; }}
   li.pbody > .row > .main > .txt {{ font-size:17.5px; line-height:1.72; font-weight:400;
@@ -512,7 +517,7 @@ PAGE = """<!DOCTYPE html>
     header .hint {{ display:none; }}
     .levels-row {{ flex-basis:100%; margin-right:0; }}
     main {{ padding:18px 14px 100px; }}
-    ul {{ padding-left:18px; }}
+    :root {{ --indent:18px; }}
     .h1 {{ font-size:23px; }}
     .h2 {{ font-size:19px; }}
   }}
@@ -664,6 +669,11 @@ PAGE = """<!DOCTYPE html>
       }}
     }}
     const cut = level > 0 && level < max ? level : 0;
+    rows.forEach(r => {{
+      const para = H > 0 && !r.h && !r.body;          // a paragraph: align it to the paragraph column
+      r.li.classList.toggle('para', para);
+      if (para) r.li.style.setProperty('--shift', H + 1 - r.d); else r.li.style.removeProperty('--shift');
+    }});
     rows.forEach(r => r.li.classList.toggle('lvhide', cut > 0 && r.lvl > cut));
     rows.forEach(r => r.li.classList.toggle('lvcut', r.branch &&
       [...r.li.querySelector(':scope > ul').children].every(c => c.classList.contains('lvhide'))));
