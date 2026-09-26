@@ -23,6 +23,13 @@ back to the `.md` only when you press **Save**.
 
 ## Features
 
+- **Citation needed** — a paragraph heading (numbered bullet) whose text
+  holds a `[cite]` placeholder (`[cite]`, `[cite: …]`) gets a quiet
+  *Citation needed* note (quote-mark icon, muted text) in the right margin, level with its first line
+  (*×n* for several). It appears live as you type the placeholder and goes
+  when you remove it; when the margin is too narrow (sidebar open, small
+  window) it sits at the end of the row instead. Display only — nothing is
+  written to the file.
 - **Navigator** — a left sidebar (toggle: panel icon, top left) listing the
   outline as a tree that **descends with the level switch**, like walking
   down a directory: in mode N every node above level N is expanded and the

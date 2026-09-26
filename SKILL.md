@@ -72,6 +72,13 @@ warning. Save serializes the whole outline from the page and rewrites the
   adding, deleting, and re-indenting bullets — then toggle back to Outline
   (the tree rebuilds, chips recompute) or Save directly. Only the outline body
   is shown; frontmatter stays untouched.
+- **Citation needed** (upstream v0.13.0) — a paragraph heading (numbered bullet) whose text
+  holds a `[cite]` placeholder (`[cite]`, `[cite: …]`) gets a quiet
+  *Citation needed* note (quote-mark icon, muted text) in the right margin, level with its first line
+  (*×n* for several). It appears live as you type the placeholder and goes
+  when you remove it; when the margin is too narrow (sidebar open, small
+  window) it sits at the end of the row instead. Display only — nothing is
+  written to the file.
 - **Navigator** (upstream v0.12.0) — a left sidebar (toggle: panel icon, top left) listing the
   outline as a tree that **descends with the level switch**, like walking
   down a directory: in mode N every node above level N is expanded and the

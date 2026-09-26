@@ -445,7 +445,25 @@ PAGE = """<!DOCTYPE html>
      row, so revealing controls never changes the text column's width. On
      hover the slot shows a trash; clicking it swaps in a check (delete) and
      a cross (cancel) in the same slot. */
-  .act {{ flex:0 0 80px; display:flex; justify-content:flex-end; gap:4px;
+  /* ---------- right margin: notes beside a paragraph heading ---------- */
+  /* Hung in the page margin, level with the row's first line; when the
+     margin is too narrow (JS sets body.margin-inline) they sit at the end of
+     the row instead, before the action slot. */
+  .row {{ position:relative; }}
+  .margin {{ position:absolute; left:calc(100% + 18px); top:9px; width:max-content;
+            display:flex; flex-direction:column; align-items:flex-start; gap:4px; }}
+  body.margin-inline .margin {{ position:static; order:1; flex:0 0 auto; align-self:baseline; }}
+  /* quiet by default: muted small text behind a tinted icon, no chip;
+     firms up a little while the row is hovered */
+  .mnote {{ display:inline-flex; align-items:center; gap:5px; white-space:nowrap;
+           font:500 11.5px/1 var(--sans); letter-spacing:.01em; color:var(--mut);
+           opacity:.8; transition:opacity .1s; }}
+  .row:hover .mnote {{ opacity:1; }}
+  .mnote::before {{ content:''; flex:0 0 auto; width:12px; height:12px;
+    background:color-mix(in srgb, var(--err) 65%, var(--mut));
+    -webkit-mask:var(--icon) center/contain no-repeat; mask:var(--icon) center/contain no-repeat; }}
+  .mnote.cite::before {{ --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 21c3 0 7-1 7-8V5c0-1.25-.76-2-2-2H4c-1.25 0-2 .75-2 2v6c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 0-1 1v3c0 1 0 1 1 1z'/%3E%3Cpath d='M15 21c3 0 7-1 7-8V5c0-1.25-.76-2-2-2h-4c-1.25 0-2 .75-2 2v6c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z'/%3E%3C/svg%3E"); }}
+  .act {{ order:2; flex:0 0 80px; display:flex; justify-content:flex-end; gap:4px;
           padding:5px 2px; border-radius:6px; }}
   .row:hover > .act, .row.confirming > .act {{ background:var(--hover); }}
   .act button {{ flex:0 0 auto; width:24px; border:none; background:none; cursor:pointer;
@@ -729,6 +747,7 @@ PAGE = """<!DOCTYPE html>
   const narrowNav = matchMedia('(max-width: 900px)');
   function setNav(open, remember) {{
     document.body.classList.toggle('nav-open', open);
+    fitMargin();
     navBtn.setAttribute('aria-expanded', String(open));
     if (remember) try {{ localStorage.setItem(NAV_KEY, open ? 'open' : 'closed'); }} catch {{}}
   }}
@@ -998,6 +1017,28 @@ PAGE = """<!DOCTYPE html>
 
   // UI paragraph numbering: bullets directly under a heading bullet, not
   // themselves headings or [placeholders], get sequential chips.
+  // ---- right-margin notes ----
+  // A paragraph heading (numbered row) whose text holds a [cite] placeholder
+  // — [cite], [cite: …] — gets a "Citation needed" badge in the right margin
+  // (×n when there are several). Recomputed with the chips, and live while
+  // the bullet is being edited.
+  const CITE_RE = /\\[cite\\b[^\\]]*\\]/gi;
+  function syncMargin(row, raw) {{
+    const n = row.classList.contains('numbered') ? (raw.match(CITE_RE) || []).length : 0;
+    let m = row.querySelector(':scope > .margin');
+    if (!n) {{ if (m) m.remove(); return; }}
+    if (!m) {{ m = document.createElement('div'); m.className = 'margin'; row.append(m); }}
+    const label = 'Citation needed' + (n > 1 ? ' ×' + n : '');
+    if (m.textContent !== label)
+      m.innerHTML = '<span class="mnote cite" title="this paragraph has ' + n +
+                    ' [cite] placeholder' + (n > 1 ? 's' : '') + '">' + label + '</span>';
+  }}
+  // hang the notes in the margin only when there is room beside the column
+  function fitMargin() {{
+    const col = document.querySelector('main').getBoundingClientRect();
+    document.body.classList.toggle('margin-inline', window.innerWidth - (col.right - 24) < 170);
+  }}
+  window.addEventListener('resize', fitMargin);
   function renumberChips() {{
     let k = 0;
     (function walk(ul, parentHeading) {{
@@ -1024,6 +1065,7 @@ PAGE = """<!DOCTYPE html>
             chip = null;
           }}
           span.closest('.row').classList.toggle('numbered', numbered);
+          if (!span.isContentEditable) syncMargin(span.closest('.row'), raw);
           // numbered rows get the quill (generate written text) before the trash
           const act = li.querySelector(':scope > .row > .act');
           let gen = act && act.querySelector(':scope > .gen');
@@ -1301,10 +1343,14 @@ PAGE = """<!DOCTYPE html>
     const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
     let done = false;
     let suppressBlur = false;
+    const onInput = () => syncMargin(span.closest('.row'), span.textContent);
+    span.addEventListener('input', onInput);
     const cleanup = () => {{ done = true; span.contentEditable = 'false';
       span.classList.remove('editing');
+      span.removeEventListener('input', onInput);
       span.removeEventListener('keydown', onKey); span.removeEventListener('blur', onBlur); }};
     const cancel = () => {{ cleanup(); span.innerHTML = prev;
+      if (span.isConnected) syncMargin(span.closest('.row'), span.dataset.raw);
       const liEl = span.closest('li');
       if (liEl && liEl.dataset.pendingNew) {{ liEl.remove(); renumberChips(); }} }};
     const stage = () => {{
