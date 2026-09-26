@@ -171,13 +171,18 @@ def render_inline(text: str):
     t = re.sub(r"(?<![\w*])\*([^*]+?)\*(?![\w*])", r"<em>\1</em>", t)
     t = re.sub(r"`([^`]+?)`", r"<code>\1</code>", t)
     t = re.sub(r"^(\((?:[^)]{0,40})\))", r'<span class="tag">\1</span>', t)
+    t = re.sub(r"\[([^\[\]]{1,80})\](?!\()", r'<span class="ph">[\1]</span>', t)
     return t, heading
+
+
+def is_placeholder(text: str) -> bool:
+    return text.startswith("[") and text.rstrip().endswith("]")
 
 
 def render_node(node) -> str:
     letter = node.get("tag")
     text, heading = render_inline(node["raw"])
-    cls = f"h{heading}" if heading else "item"
+    cls = f"h{heading}" if heading else ("item placeholder" if is_placeholder(node["raw"]) else "item")
     numbered = bool(node.get("num"))
     if letter:
         pos = DEFAULT_POS.get(letter, "x")
@@ -305,10 +310,11 @@ PAGE = """<!DOCTYPE html>
            padding:5px 8px 5px 0; border-radius:6px; }}
   .row:hover > .main {{ background:var(--hover); }}
 
-  /* breathing room above section headings */
+  /* vertical rhythm: sections breathe most, counts next, paragraphs a little */
   li:has(> .row > .main > .txt.h1) {{ margin-top:8px; }}
-  li:has(> .row > .main > .txt.h2) {{ margin-top:26px; }}
-  li:has(> .row > .main > .txt.h3) {{ margin-top:16px; }}
+  li:has(> .row > .main > .txt.h2) {{ margin-top:36px; }}
+  li:has(> .row > .main > .txt.h3) {{ margin-top:22px; }}
+  li:has(> .row.numbered) {{ margin-top:8px; }}
   main > ul > li:first-child {{ margin-top:0; }}
 
   /* caret & dot get a real baseline via inline-block pseudo, so they
@@ -335,10 +341,26 @@ PAGE = """<!DOCTYPE html>
   /* text */
   .txt {{ flex:1 1 auto; min-width:0; overflow-wrap:break-word;
          text-wrap:pretty; hanging-punctuation:first; }}
-  .h1 {{ font-size:26px; line-height:1.25; font-weight:700; letter-spacing:-0.015em; text-wrap:balance; }}
-  .h2 {{ font-size:20px; line-height:1.3; font-weight:700; letter-spacing:-0.01em; text-wrap:balance; }}
-  .h3 {{ font-size:17.5px; line-height:1.4; font-weight:600; font-style:italic; text-wrap:balance; }}
+  .h1 {{ font-size:27px; line-height:1.22; font-weight:700; letter-spacing:-0.015em; text-wrap:balance; }}
+  .h2 {{ font-size:21px; line-height:1.3; font-weight:700; letter-spacing:-0.01em; text-wrap:balance; }}
+  .h3 {{ font-size:18px; line-height:1.38; font-weight:600; letter-spacing:-0.005em; text-wrap:balance; }}
+  .h3 em {{ font-style:italic; font-weight:500; }}
   strong {{ font-weight:700; }}
+  /* a paragraph's topic sentence is a plain reading line; once it has written
+     text under it, it becomes the run-in heading over that prose */
+  li.written > .row > .main > .txt {{ font-weight:600; letter-spacing:-0.004em; }}
+  li.written > ul {{ border-left:none; padding-left:26px; }}   /* prose is not a branch */
+  li.pbody {{ margin:2px 0 14px; }}
+  li.pbody > .row > .main {{ padding-top:2px; padding-bottom:2px; }}
+  li.pbody > .row > .main > .txt {{ font-size:17.5px; line-height:1.72; font-weight:400;
+                                     color:var(--ink); max-width:62ch; }}
+  /* placeholders: [cite], [fact: …] inline become quiet chips; a bullet that
+     is nothing but a bracket note reads muted and italic */
+  .ph {{ font:500 12px/1 var(--sans); color:var(--mut); white-space:nowrap; letter-spacing:.02em;
+        opacity:.85; }}
+  li.pbody .ph {{ font-size:11.5px; }}              /* quieter still inside running prose */
+  .txt.placeholder {{ color:var(--mut); font-style:italic; }}
+  .txt.placeholder .ph {{ font:inherit; color:inherit; opacity:1; letter-spacing:0; }}
   .pnum {{ flex:0 0 auto; min-width:14px; text-align:center; color:var(--mut);
           font:600 11.5px/1 var(--sans); font-variant-numeric:tabular-nums;
           background:var(--chip); border-radius:999px; padding:3px 7px; white-space:nowrap;
@@ -732,7 +754,9 @@ PAGE = """<!DOCTYPE html>
     s = s.replace(/(?<![\\w*])\\*([^*]+?)\\*(?![\\w*])/g, '<em>$1</em>');
     s = s.replace(/`([^`]+?)`/g, '<code>$1</code>');
     s = s.replace(/^(\\((?:[^)]{{0,40}})\\))/, '<span class="tag">$1</span>');
-    return {{ html: s, cls: heading ? 'h' + heading : 'item' }};
+    s = s.replace(/\\[([^\\[\\]]{{1,80}})\\](?!\\()/g, '<span class="ph">[$1]</span>');
+    const placeholder = !heading && t.startsWith('[') && t.trimEnd().endsWith(']');
+    return {{ html: s, cls: heading ? 'h' + heading : placeholder ? 'item placeholder' : 'item' }};
   }}
 
   // ---- serialization: DOM -> bullets, bullets -> markdown/DOM ----
