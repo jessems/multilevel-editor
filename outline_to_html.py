@@ -274,7 +274,8 @@ PAGE = """<!DOCTYPE html>
   li.lvcut > .row .caret::before {{ width:5px; height:5px; border:0; border-radius:50%;
     background:var(--mut); opacity:.75; transform:none; position:relative; top:-1px; }}
   li.lvcut > .row.numbered .caret::before {{ display:none; }}
-  #levels button {{ border:none; border-radius:0; padding:6px 10px; min-width:30px; }}
+  #levels button {{ border:none; border-radius:0; padding:5px 10px; min-width:30px; }}
+  #levels button svg {{ display:block; width:20px; height:20px; margin:0 auto; }}
   #levels button + button {{ border-left:1px solid var(--line); }}
   #levels button:hover {{ background:var(--hover); }}
   #levels button.on {{ background:var(--acc); color:var(--bg); }}
@@ -585,6 +586,30 @@ PAGE = """<!DOCTYPE html>
     return {{ rows, max, H }};
   }}
   const minLevel = rows => rows.filter(r => r.lvl <= 1).length === 1 ? 2 : 1;
+  // one icon per mode: headings (and plain depths) as an outline of n
+  // bulleted, stepped-in bars, the paragraph level as a pilcrow, written text as lines of prose
+  function levelIcon(kind, n) {{
+    let d, dots = '';
+    if (kind === 'para') d = 'M13 4v16M17 4v16M19 4H9.5a4.5 4.5 0 0 0 0 9H13';
+    else if (kind === 'text') d = 'M4 5h16M4 10h16M4 15h16M4 20h10';
+    else {{
+      // a bulleted staircase: each row a filled dot plus an equal-length bar, so
+      // the left edges step in while the right edges don't line up (≠ right-aligned text)
+      const k = Math.min(n, 6), gap = k > 1 ? Math.min(7, 16 / (k - 1)) : 0,
+            top = 12 - gap * (k - 1) / 2, step = k > 1 ? Math.min(4, 6 / (k - 1)) : 0,
+            len = 21 - (3 + (k - 1) * step) - 6;
+      d = '';
+      for (let i = 0; i < k; i++) {{
+        const x = 3 + i * step, y = +(top + i * gap).toFixed(1);
+        dots += '<circle cx="' + (x + 1) + '" cy="' + y + '" r="' + (k > 3 ? 1.4 : 1.8) +
+                '" fill="currentColor" stroke="none"/>';
+        d += 'M' + (x + 6) + ' ' + y + 'h' + len;
+      }}
+    }}
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
+           'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + dots +
+           '<path d="' + d + '"/></svg>';
+  }}
   function showLevels(n, remember = true) {{
     const {{ rows, max }} = levelRows();
     n = Math.max(n, minLevel(rows));
@@ -600,15 +625,19 @@ PAGE = """<!DOCTYPE html>
     const min = minLevel(rows);
     if (level && level < min) level = min;
     const want = max > min ? max - min + 1 : 0;   // nothing to switch below the minimum
-    if (levelBar.children.length !== want ||
-        (want && +levelBar.firstChild.dataset.level !== min)) {{
+    const sig = want ? min + '-' + max + '-' + H : '';
+    if (levelBar.dataset.sig !== sig) {{
+      levelBar.dataset.sig = sig;
       levelBar.innerHTML = '';
-      for (let n = min; n <= max; n++) {{
+      for (let n = min; want && n <= max; n++) {{
         const b = document.createElement('button');
-        b.type = 'button'; b.textContent = n; b.dataset.level = n;
+        const kind = !H || n <= H ? 'depth' : n === H + 1 ? 'para' : 'text';
+        b.type = 'button'; b.dataset.level = n;
+        b.innerHTML = levelIcon(kind, n);
         b.title = !H ? (n === max ? 'show all levels' : 'show the top ' + n + ' levels')
                 : n <= H ? 'show headings down to level ' + n
                 : n === H + 1 ? 'show the paragraphs' : 'show the fully written paragraphs';
+        b.setAttribute('aria-label', b.title);
         levelBar.appendChild(b);
       }}
     }}
