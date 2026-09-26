@@ -66,11 +66,16 @@ warning. Save serializes the whole outline from the page and rewrites the
 - **Skeleton variants.** The "Skeleton variant…" button (top right of the
   text) opens a dialog: an instruction box with an example (a different
   legal argumentation style), **Use default settings** runs the example,
-  **Generate** runs the typed instruction. `POST /variant` has the model
-  rewrite the skeleton on disk to the instruction and writes
-  `<outline>.variant-N.md` beside it (frontmatter: summary, variant_of,
-  variant, title, prompt, created, status: draft); the page then opens it
-  (`?doc=<name>`). Variants are full skeletons with their own draft and tags.
+  **Generate** runs the typed instruction. `POST /variant` reserves the next
+  variant number, starts the generation in a background thread and answers at
+  once; the page navigates to `?doc=<name>` where a read-only "being written"
+  page polls `GET /variant/status?name=` (≈0.6 s) and rebuilds the tree from
+  the streamed reply (the CLI runs with `--output-format stream-json
+  --include-partial-messages`; the SDK path uses `messages.stream`), with a
+  banner, a progress bar and fade-in for arriving bullets; when the job is
+  done the file `<outline>.variant-N.md` exists (frontmatter: summary,
+  variant_of, variant, title, prompt, created, status: draft) and the page
+  reloads onto it; a failure shows the error with a link back. Variants are full skeletons with their own draft and tags.
   The navigator's top level lists the family (base + variants); the open file
   expands onto its outline. Start the server on the base skeleton; it serves
   the family and refuses any other path. Unsaved edits block generation.

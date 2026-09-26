@@ -145,9 +145,13 @@ back to the `.md` only when you press **Save**.
   box, e.g. rebuilding the argument in a different legal argumentation
   style, is what **Use default settings** runs) and **Generate**. The model
   rewrites the whole skeleton on disk to that instruction — same facts, same
-  placeholders, same language — and the result is saved as a **new file
-  beside the original**, `<outline>.variant-N.md`, with frontmatter recording
-  what it derives from and the instruction used. The original is untouched.
+  placeholders, same language. The page moves to the new document at once
+  and **shows it being written**: a banner with a pulse and a sliding bar,
+  the outline filling in bullet by bullet as the model's reply streams in
+  (via the `claude` CLI's partial messages or the SDK's text stream), then a
+  reload onto the finished file. The result is saved as a **new file beside
+  the original**, `<outline>.variant-N.md`, with frontmatter recording what
+  it derives from and the instruction used. The original is untouched.
   Each variant is a skeleton in its own right, with its own `.draft.md` and
   `.tags.yaml`. The **navigator's top level is the file family**: the
   skeleton and its variants; the open one expands onto its outline, the

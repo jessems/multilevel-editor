@@ -37,6 +37,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import webbrowser
 from datetime import date
 from urllib.parse import parse_qs, urlparse
@@ -513,6 +514,32 @@ PAGE = """<!DOCTYPE html>
   #insertHint:hover .plus {{ background:var(--acc); color:var(--bg); }}
   body.readonly #insertHint {{ display:none; }}
 
+  /* ---------- a variant being written: banner + live-filling tree ---------- */
+  #genBanner {{ margin:-4px 0 22px; padding:14px 16px 12px; border:1px solid var(--line); border-radius:10px;
+                background:var(--editbg); font:13px/1.45 var(--sans); color:var(--ink); }}
+  .gen-head {{ display:flex; align-items:center; gap:9px; }}
+  .gen-dot {{ width:9px; height:9px; border-radius:50%; background:var(--acc); flex:0 0 auto;
+             animation:genpulse 1.2s ease-in-out infinite; }}
+  .gen-count {{ margin-left:auto; color:var(--mut); font-variant-numeric:tabular-nums; }}
+  .gen-sub {{ color:var(--mut); margin:4px 0 0 18px; }}
+  .gen-bar {{ position:relative; height:3px; margin:12px 0 0; border-radius:2px; overflow:hidden;
+             background:color-mix(in srgb, var(--acc) 18%, transparent); }}
+  .gen-bar span {{ position:absolute; inset:0; width:38%; border-radius:2px; background:var(--acc);
+                  animation:genslide 1.6s cubic-bezier(.4,0,.2,1) infinite; }}
+  .gen-err {{ color:var(--err); margin-top:10px; }}
+  .gen-err a {{ color:inherit; }}
+  body.gen-done .gen-dot {{ animation:none; background:var(--ok); }}
+  body.gen-done .gen-bar span {{ animation:none; width:100%; background:var(--ok); }}
+  body.gen-failed .gen-dot {{ animation:none; background:var(--err); }}
+  body.gen-failed .gen-bar {{ display:none; }}
+  @keyframes genpulse {{ 0%,100% {{ transform:scale(.8); opacity:.55; }} 50% {{ transform:scale(1.15); opacity:1; }} }}
+  @keyframes genslide {{ from {{ left:-40%; }} to {{ left:100%; }} }}
+  /* bullets arriving from the stream fade in; the placeholder title breathes */
+  @keyframes genfade {{ from {{ opacity:0; transform:translateY(3px); }} to {{ opacity:1; transform:none; }} }}
+  body.generating li.fresh > .row {{ animation:genfade .35s ease-out both; }}
+  body.generating .txt.h1.placeholder-title {{ color:var(--mut); animation:genpulse 1.6s ease-in-out infinite; }}
+  body.generating #levels, body.generating .main-tools {{ display:none; }}
+
   /* ---------- main tools (top right of the reading column) + variant dialog ---------- */
   .main-tools {{ display:flex; justify-content:flex-end; margin:-6px 0 16px; }}
   /* the primary action of the top level: an accent pill with a branch icon,
@@ -646,6 +673,13 @@ PAGE = """<!DOCTYPE html>
 </aside>
 <nav id="nav" aria-label="navigator"><div class="nav-title">Navigator</div><ul id="navTree"></ul></nav>
 <main>
+<div id="genBanner" hidden>
+  <div class="gen-head"><span class="gen-dot"></span><strong id="genTitle">Writing this variant…</strong>
+    <span id="genCount" class="gen-count"></span></div>
+  <div id="genSub" class="gen-sub"></div>
+  <div class="gen-bar"><span></span></div>
+  <div id="genErr" class="gen-err" hidden></div>
+</div>
 <div class="main-tools"><button id="variantBtn" type="button" title="generate a variant of this skeleton as a new file">New skeleton variant</button></div>
 <ul id="tree">{tree}</ul>
 <textarea id="mdview" spellcheck="false"></textarea>
@@ -672,6 +706,7 @@ PAGE = """<!DOCTYPE html>
   const DOC = {doc_js};                        // the family member this page edits
   const DOCS = {docs_json};                    // the skeleton and its variants
   const DEFAULT_INSTRUCTION = {default_instruction_js};
+  const GENERATING = {generating_json};        // set on the page of a variant still being written
   const SCHEME = "{scheme}";
   const ORPHANS = {orphans};
   const DRAFT_ORPHANS = {draft_orphans};   // written text whose paragraph is gone — sent back on save, kept in the draft
@@ -1356,6 +1391,52 @@ PAGE = """<!DOCTYPE html>
     }}
   }}
 
+  // ---- a variant being written: follow /variant/status and grow the tree live ----
+  if (GENERATING) {{
+    const banner = document.getElementById('genBanner');
+    banner.hidden = false;
+    document.getElementById('genSub').textContent =
+      'Variant ' + GENERATING.n + ' of ' + GENERATING.src + ' — ' + GENERATING.instruction;
+    const count = document.getElementById('genCount');
+    let shown = 0, lastKey = '';
+    const poll = async () => {{
+      try {{
+        const r = await fetch('/variant/status?name=' + encodeURIComponent(GENERATING.name));
+        const st = await r.json();
+        if (!r.ok) throw new Error(st.error || r.status);
+        const key = st.lines.length + ':' + st.chars;
+        if (st.lines.length && key !== lastKey) {{
+          lastKey = key;
+          buildTree(parseMarkdown(st.lines.join('\\n')));
+          showLevels(99, false);
+          [...tree.querySelectorAll('li')].slice(shown).forEach(li => li.classList.add('fresh'));
+          shown = st.lines.length;
+        }}
+        count.textContent = st.lines.length ? st.lines.length + ' bullets · ' + st.chars + ' characters' : 'waiting for the first words…';
+        if (st.status === 'done') {{
+          document.body.classList.add('gen-done');
+          document.getElementById('genTitle').textContent = 'Written — opening the file…';
+          setTimeout(() => location.reload(), 600);
+          return;
+        }}
+        if (st.status === 'error') {{
+          document.body.classList.add('gen-failed');
+          document.getElementById('genTitle').textContent = 'The variant could not be written';
+          const err = document.getElementById('genErr');
+          err.hidden = false;
+          err.innerHTML = esc(st.error || 'unknown error') + ' · <a href="?doc=' +
+            encodeURIComponent(GENERATING.src) + '">back to ' + esc(GENERATING.src) + '</a>';
+          return;
+        }}
+      }} catch (err) {{
+        count.textContent = 'lost contact with the server: ' + err.message;
+      }}
+      setTimeout(poll, 600);
+    }};
+    tree.querySelector('.txt.h1')?.classList.add('placeholder-title');
+    poll();
+  }}
+
   // ---- skeleton variant: instruction dialog → /variant → open the new file ----
   const variantDlg = document.getElementById('variantDlg');
   const variantPrompt = document.getElementById('variantPrompt');
@@ -1369,14 +1450,13 @@ PAGE = """<!DOCTYPE html>
   async function makeVariant(instruction) {{
     const buttons = variantDlg.querySelectorAll('button');
     buttons.forEach(b => b.disabled = true); variantDlg.classList.add('busy');
-    variantErr.textContent = 'generating — the model rewrites the whole skeleton; this can take a minute or two…';
+    variantErr.textContent = 'starting…';
     try {{
       const r = await fetch('/variant', {{ method: 'POST', headers: {{'Content-Type': 'application/json'}},
         body: JSON.stringify({{ doc: DOC, instruction }}) }});
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || r.status);
-      variantErr.textContent = 'saved as ' + data.name + ' — opening…';
-      location.href = '?doc=' + encodeURIComponent(data.name);
+      location.href = '?doc=' + encodeURIComponent(data.name);   // the new page shows it being written
     }} catch (err) {{
       variantDlg.classList.remove('busy');
       variantErr.textContent = 'could not generate the variant: ' + err.message;
@@ -1791,36 +1871,71 @@ def build_generate_prompt(req: dict) -> str:
     return GENERATE_PROMPT.format(outline="\n".join(marked), target=target, existing=ex)
 
 
-def generate_text(prompt: str, model: str, cwd: Path) -> str:
-    """Ask the model for the paragraph. Backends, in order: the `anthropic`
-    SDK when it is installed and has credentials; otherwise the `claude` CLI
-    (Claude Code) on PATH, run tool-less and non-interactively."""
+def generate_text(prompt: str, model: str, cwd: Path, on_text=None) -> str:
+    """Ask the model and return its text. `on_text(accumulated)` is called as
+    the reply streams in. Backends, in order: the `anthropic` SDK when it is
+    installed and has credentials; otherwise the `claude` CLI (Claude Code) on
+    PATH, run tool-less and non-interactively with partial messages streamed."""
     try:
         import anthropic  # optional — the tool itself stays stdlib-only
     except ImportError:
         anthropic = None
     if anthropic is not None and (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
         client = anthropic.Anthropic()
-        resp = client.messages.create(
-            model=model, max_tokens=16000,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        if resp.stop_reason == "refusal":
+        parts = []
+        with client.messages.stream(model=model, max_tokens=32000,
+                                    messages=[{"role": "user", "content": prompt}]) as stream:
+            for chunk in stream.text_stream:
+                parts.append(chunk)
+                if on_text:
+                    on_text("".join(parts))
+            final = stream.get_final_message()
+        if final.stop_reason == "refusal":
             raise RuntimeError("the model declined this request")
-        return "".join(b.text for b in resp.content if b.type == "text")
+        return "".join(parts)
     cli = shutil.which("claude")
     if not cli:
         raise RuntimeError("no model backend: install the `claude` CLI, or `pip install anthropic` "
                            "and set ANTHROPIC_API_KEY")
     env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}   # allow nesting inside a session
-    proc = subprocess.run(
-        [cli, "-p", "--output-format", "text", "--model", model, "--tools", "",
-         "--no-session-persistence"],
-        input=prompt, capture_output=True, text=True, cwd=str(cwd), env=env, timeout=600,
+    proc = subprocess.Popen(
+        [cli, "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
+         "--model", model, "--tools", "", "--no-session-persistence"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, cwd=str(cwd), env=env,
     )
-    if proc.returncode != 0:
-        raise RuntimeError((proc.stderr or proc.stdout or "claude CLI failed").strip()[-400:])
-    return proc.stdout.strip()
+    proc.stdin.write(prompt)
+    proc.stdin.close()
+    parts, full, result_error = [], None, None
+    for line in proc.stdout:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            continue
+        kind = obj.get("type")
+        if kind == "stream_event":
+            ev = obj.get("event", {})
+            if ev.get("type") == "content_block_delta" and ev.get("delta", {}).get("type") == "text_delta":
+                parts.append(ev["delta"].get("text", ""))
+                if on_text:
+                    on_text("".join(parts))
+        elif kind == "assistant":
+            full = "".join(b.get("text", "") for b in obj.get("message", {}).get("content", [])
+                           if b.get("type") == "text") or full
+        elif kind == "result":
+            if obj.get("is_error"):
+                result_error = str(obj.get("result") or "claude CLI reported an error")
+            elif not parts and not full and obj.get("result"):
+                full = str(obj["result"])
+    proc.wait(timeout=600)
+    if result_error:
+        raise RuntimeError(result_error[-400:])
+    if proc.returncode != 0 and not (parts or full):
+        raise RuntimeError((proc.stderr.read() or "claude CLI failed").strip()[-400:])
+    return ("".join(parts) if parts else (full or "")).strip()
 
 
 # ---------- the draft: written paragraphs live beside the outline, not in it ----------
@@ -1983,9 +2098,10 @@ def doc_label(p: Path, base: Path) -> str:
     return f"Variant {m.group(1)}" if m else base.stem
 
 
-def parse_variant_reply(text: str):
+def parse_variant_reply(text: str, strict: bool = True):
     """Keep the bullet lines of the model's reply, normalise indentation to
-    two spaces per level, and insist on an outline that starts with a heading."""
+    two spaces per level, and (strict) insist on an outline that starts with
+    a heading. Lenient mode serves the live view while the reply streams."""
     raw = []
     for line in text.splitlines():
         if line.strip().startswith("```"):
@@ -1996,18 +2112,24 @@ def parse_variant_reply(text: str):
         elif raw and line.strip() and not line.lstrip().startswith(("-", "*")):
             raw[-1] = (raw[-1][0], raw[-1][1] + " " + line.strip())   # continuation line
     if not raw:
-        raise RuntimeError("the model returned no bullets")
+        if strict:
+            raise RuntimeError("the model returned no bullets")
+        return []
     levels = {ind: i for i, ind in enumerate(sorted({ind for ind, _ in raw}))}
     lines = ["  " * levels[ind] + "- " + txt for ind, txt in raw]
-    tree = parse_outline("\n".join(lines))
-    if not tree or not is_heading_raw(tree[0]["raw"]):
-        raise RuntimeError("the model did not return a skeleton (it must start with a # heading bullet)")
+    if strict:
+        tree = parse_outline("\n".join(lines))
+        if not tree or not is_heading_raw(tree[0]["raw"]):
+            raise RuntimeError("the model did not return a skeleton (it must start with a # heading bullet)")
     return lines
 
 
-def write_variant(base: Path, derived_from: Path, instruction: str, lines) -> Path:
-    n = 1 + max([int(VARIANT_RE.search(p.name).group(1)) for p in family_of(base)[1:]] or [0])
-    path = base.with_name(f"{base.stem}.variant-{n}.md")
+def variant_path(base: Path, n: int) -> Path:
+    return base.with_name(f"{base.stem}.variant-{n}.md")
+
+
+def write_variant(base: Path, derived_from: Path, instruction: str, lines, n: int) -> Path:
+    path = variant_path(base, n)
     short = re.sub(r"\s+", " ", instruction).strip()
     fm = ["---",
           f"summary: Skeleton variant {n} of {base.name} — {short[:140]}",
@@ -2030,10 +2152,22 @@ def combined_hash(source: Path) -> str:
     return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()
 
 
-def build_page(source: Path, editable: bool, base: Path = None) -> str:
+def family_docs(base: Path, current: str, jobs=None):
+    docs = [{"name": p.name, "label": doc_label(p, base), "current": p.name == current, "pending": False}
+            for p in family_of(base)]
+    names = {d["name"] for d in docs}
+    for name, job in (jobs or {}).items():
+        if name not in names and job.status != "done":
+            docs.append({"name": name, "label": f"Variant {job.n} (generating…)",
+                         "current": name == current, "pending": True})
+    return docs
+
+
+def build_page(source: Path, editable: bool, base: Path = None, docs=None) -> str:
     base = base or source
-    family = family_of(base) if editable else [source]
-    docs = [{"name": p.name, "label": doc_label(p, base), "current": p == source} for p in family]
+    if docs is None:
+        docs = family_docs(base, source.name) if editable else [
+            {"name": source.name, "label": source.stem, "current": True, "pending": False}]
     text = source.read_text(encoding="utf-8")
     meta = load_meta(source)
     tree = parse_outline(text)
@@ -2071,6 +2205,7 @@ def build_page(source: Path, editable: bool, base: Path = None) -> str:
         source=source.name,
         doc_js=json.dumps(source.name),
         docs_json=json.dumps(docs),
+        generating_json="null",
         default_instruction=html.escape(DEFAULT_VARIANT_INSTRUCTION, quote=True),
         default_instruction_js=json.dumps(DEFAULT_VARIANT_INSTRUCTION),
         source_js=json.dumps(source.name),
@@ -2087,8 +2222,78 @@ def build_page(source: Path, editable: bool, base: Path = None) -> str:
     )
 
 
+def build_generating_page(job, base: Path, docs) -> str:
+    """The page for a variant that is still being written: read-only, a
+    banner, and a tree the page fills in live from /variant/status."""
+    placeholder = {"indent": 0, "raw": f"# Variant {job.n} — being written…", "tag": None, "children": [], "num": None}
+    return PAGE.format(
+        title=f"Variant {job.n}",
+        source=job.name,
+        doc_js=json.dumps(job.name),
+        docs_json=json.dumps(docs),
+        generating_json=json.dumps({"name": job.name, "n": job.n, "src": job.src.name,
+                                    "instruction": job.instruction}),
+        source_js=json.dumps(job.name),
+        tree=render_node(placeholder),
+        editable="false",
+        bodycls="readonly generating",
+        filehash="",
+        scheme="creac",
+        orphans=0,
+        draft_orphans="{}",
+        draft_name=json.dumps(""),
+        default_instruction=html.escape(DEFAULT_VARIANT_INSTRUCTION, quote=True),
+        default_instruction_js=json.dumps(DEFAULT_VARIANT_INSTRUCTION),
+        hint="",
+    )
+
+
+class VariantJob:
+    """One variant being generated in the background."""
+
+    def __init__(self, name, n, src, instruction):
+        self.name, self.n, self.src, self.instruction = name, n, src, instruction
+        self.status, self.text, self.error = "running", "", None
+
+    def snapshot(self):
+        complete = self.text.rsplit("\n", 1)[0] if "\n" in self.text else ""
+        return {"status": self.status, "n": self.n, "src": self.src.name, "instruction": self.instruction,
+                "lines": parse_variant_reply(complete, strict=False), "chars": len(self.text),
+                "error": self.error}
+
+
 def serve(source: Path, port: int, open_browser: bool = True, model: str = "claude-opus-5"):
     base = source
+    jobs = {}                    # variant name -> VariantJob (running, done, or failed)
+    jobs_lock = threading.Lock()
+
+    def start_variant(src: Path, instruction: str) -> VariantJob:
+        with jobs_lock:
+            taken = [int(VARIANT_RE.search(p.name).group(1)) for p in family_of(base)[1:]]
+            taken += [j.n for j in jobs.values()]
+            n = 1 + max(taken or [0])
+            job = VariantJob(variant_path(base, n).name, n, src, instruction)
+            jobs[job.name] = job
+
+        def run():
+            try:
+                skeleton = strip_frontmatter(src.read_text(encoding="utf-8"))
+                prompt = VARIANT_PROMPT.format(instruction=instruction, skeleton=skeleton)
+
+                def on_text(t):
+                    job.text = t
+
+                reply = generate_text(prompt, model, src.parent, on_text=on_text)
+                job.text = reply
+                write_variant(base, src, instruction, parse_variant_reply(reply), n)
+                job.status = "done"
+                print(f"  variant: {job.name} from {src.name}", flush=True)
+            except Exception as e:  # noqa: BLE001 — surfaced to the page via /variant/status
+                job.status, job.error = "error", str(e)
+                print(f"  variant failed: {job.name}: {e}", flush=True)
+
+        threading.Thread(target=run, daemon=True).start()
+        return job
 
     def resolve(name):
         """A member of the family by file name — never an arbitrary path."""
@@ -2110,28 +2315,40 @@ def serve(source: Path, port: int, open_browser: bool = True, model: str = "clau
 
         def do_GET(self):
             url = urlparse(self.path)
+            q = parse_qs(url.query)
+            if url.path == "/variant/status":
+                job = jobs.get(q.get("name", [""])[0])
+                if not job:
+                    self._send(404, json.dumps({"error": "no such generation"}), "application/json")
+                    return
+                self._send(200, json.dumps(job.snapshot()), "application/json")
+                return
             if url.path in ("/", "/index.html"):
+                name = q.get("doc", [""])[0]
                 try:
-                    doc = resolve(parse_qs(url.query).get("doc", [""])[0])
+                    doc = resolve(name)
                 except FileNotFoundError as e:
+                    job = jobs.get(name)
+                    if job and job.status != "done":
+                        self._send(200, build_generating_page(job, base, family_docs(base, name, jobs)))
+                        return
                     self._send(404, str(e), "text/plain")
                     return
-                self._send(200, build_page(doc, editable=True, base=base))
+                self._send(200, build_page(doc, editable=True, base=base, docs=family_docs(base, doc.name, jobs)))
             else:
                 self._send(404, "not found", "text/plain")
 
         def do_POST(self):
             if self.path == "/variant":
+                # starts the generation in the background and answers at once
+                # with the new file's name; the page navigates there and
+                # follows /variant/status while the model writes
                 try:
                     req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                     src = resolve(req.get("doc"))
                     instruction = (req.get("instruction") or "").strip() or DEFAULT_VARIANT_INSTRUCTION
-                    skeleton = strip_frontmatter(src.read_text(encoding="utf-8"))
-                    reply = generate_text(VARIANT_PROMPT.format(instruction=instruction, skeleton=skeleton),
-                                          model, src.parent)
-                    path = write_variant(base, src, instruction, parse_variant_reply(reply))
-                    self._send(200, json.dumps({"name": path.name}), "application/json")
-                    print(f"  variant: {path.name} from {src.name}", flush=True)
+                    job = start_variant(src, instruction)
+                    self._send(200, json.dumps({"name": job.name}), "application/json")
                 except Exception as e:  # noqa: BLE001 — report any failure to the client
                     self._send(500, json.dumps({"error": str(e)}), "application/json")
                 return
