@@ -614,20 +614,30 @@ PAGE = """<!DOCTYPE html>
   @keyframes genfade {{ from {{ opacity:0; transform:translateY(3px); }} to {{ opacity:1; transform:none; }} }}
   body.generating li.fresh > .row {{ animation:genfade .35s ease-out both; }}
   body.generating .txt.h1.placeholder-title {{ color:var(--mut); animation:genpulse 1.6s ease-in-out infinite; }}
-  body.generating #levels, body.generating #variantBtn {{ display:none; }}
-  body.generating .main-tools {{ display:flex; }}               /* the tabs stay: this variant's tab is active */
+  body.generating #levels, body.generating .main-tools {{ display:none; }}   /* the tabs stay: this variant's is active */
 
   /* ---------- main tools (top right of the reading column) + variant dialog ---------- */
-  .main-tools {{ display:flex; justify-content:space-between; align-items:center; gap:12px; margin:-6px 0 16px; }}
-  #variantBtn {{ margin-left:auto; }}
-  /* document tabs: the skeleton and its variants as a strip above the outline —
-     the same quiet segmented control as a bullet's version tabs, led by the
-     branch glyph; ‹ › step through the family, the active tab is this document */
-  .dtabs {{ display:flex; align-items:center; gap:1px; flex-wrap:wrap; max-width:100%;
-           padding:1px 2px 1px 7px; background:color-mix(in srgb, var(--acc) 6%, var(--bg));
-           border:1px solid color-mix(in srgb, var(--acc) 25%, var(--line)); border-radius:8px;
+  .main-tools {{ display:flex; justify-content:flex-end; align-items:center; gap:12px; margin:-6px 0 16px; }}
+  /* document tabs: the skeleton and its variants (Original, v1, v2 …) as a
+     strip sitting on the outline's title row — the same quiet segmented
+     control as a bullet's version tabs, led by the branch glyph; ‹ › step
+     through the family, the active tab is this document. Its border shows on
+     hover, when the strip becomes a folder tab whose frame runs on around
+     the title it governs. */
+  .dtabs {{ display:flex; align-items:center; gap:1px; flex-wrap:wrap; width:max-content; max-width:calc(100% - 28px);
+           margin:0 0 0 32px; padding:1px 2px 1px 7px; position:relative; z-index:1;
+           background:color-mix(in srgb, var(--acc) 6%, var(--bg));
+           --vframe:color-mix(in srgb, var(--acc) 25%, var(--line));
+           border:1px solid transparent; border-radius:8px; transition:border-color .12s;
            font:500 11.5px/1 var(--sans); }}
   .dtabs:empty {{ display:none; }}
+  body.has-tabs #tree > li:first-child {{ margin-top:0; }}        /* the title sits flush under its tabs */
+  body:has(#docTabs:hover, #tree > li:first-child > .row:hover) #docTabs {{
+    border-color:var(--vframe); border-bottom-color:transparent;
+    border-bottom-left-radius:0; border-bottom-right-radius:0; }}
+  body:has(#docTabs:hover, #tree > li:first-child > .row:hover) #tree > li:first-child > .row > .main {{
+    box-shadow:0 0 0 1px var(--vframe, color-mix(in srgb, var(--acc) 25%, var(--line)));
+    background:color-mix(in srgb, var(--acc) 6%, var(--bg)); }}
   .dtabs::before {{ content:''; flex:0 0 11px; height:11px; margin-right:3px; background:var(--acc); opacity:.8;
     -webkit-mask:var(--icon) center/contain no-repeat; mask:var(--icon) center/contain no-repeat;
     --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 3v12'/%3E%3Ccircle cx='18' cy='6' r='3'/%3E%3Ccircle cx='6' cy='18' r='3'/%3E%3Cpath d='M18 9a9 9 0 0 1-9 9'/%3E%3C/svg%3E"); }}
@@ -652,8 +662,8 @@ PAGE = """<!DOCTYPE html>
   #variantBtn:active {{ transform:none; box-shadow:0 1px 2px rgba(0,0,0,.10); filter:none; }}
   #variantBtn:focus-visible {{ outline:2px solid var(--acc); outline-offset:3px; }}
   body:not(.toplevel) #variantBtn {{ display:none; }}            /* the button lives on the top level only… */
-  body:not(.toplevel):not(.has-tabs) .main-tools,               /* …the tabs on every level */
-  body.readonly .main-tools, body.mdmode .main-tools {{ display:none; }}
+  body:not(.toplevel) .main-tools,                               /* …the tabs on every level */
+  body.readonly .main-tools, body.mdmode .main-tools, body.mdmode .dtabs {{ display:none; }}
   #variantDlg {{ border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink);
                  padding:20px 22px 18px; width:min(560px, 92vw); box-sizing:border-box;
                  font:14px/1.5 var(--sans); box-shadow:0 18px 50px rgba(0,0,0,.25); }}
@@ -777,9 +787,9 @@ PAGE = """<!DOCTYPE html>
   <div id="genErr" class="gen-err" hidden></div>
 </div>
 <div class="main-tools">
-  <div class="dtabs" id="docTabs" role="tablist" aria-label="the skeleton and its variants"></div>
   <button id="variantBtn" type="button" title="generate a variant of this skeleton as a new file">New skeleton variant</button>
 </div>
+<div class="dtabs" id="docTabs" role="tablist" aria-label="the skeleton and its variants"></div>
 <ul id="tree">{tree}</ul>
 <textarea id="mdview" spellcheck="false"></textarea>
 </main>
@@ -1634,13 +1644,14 @@ PAGE = """<!DOCTYPE html>
       const go = d => {{ location.href = '?doc=' + encodeURIComponent(d.name) + '&level=' + activeLevel; }};
       const tabLabel = d => {{
         const m = /\\.variant-(\\d+)\\.md$/.exec(d.name);
-        return d.pending ? d.title + '…' : m ? 'Variant ' + m[1] : 'Original';
+        return d.pending ? 'v' + d.title.replace(/\\D+/g, '') + '…' : m ? 'v' + m[1] : 'Original';
       }};
       const b = (cls, label, title, extra = '') =>
         '<button type="button" class="' + cls + '" title="' + esc(title) + '"' + extra + '>' + esc(label) + '</button>';
       strip.innerHTML =
         b('dnav', '‹', 'previous', at <= 0 ? ' disabled' : '') +
-        DOCS.map((d, i) => b('dtab' + (d.current ? ' on' : '') + (d.pending ? ' pending' : ''), tabLabel(d), d.title,
+        DOCS.map((d, i) => b('dtab' + (d.current ? ' on' : '') + (d.pending ? ' pending' : ''), tabLabel(d),
+                             d.title + (d.suffix ? ' ' + d.suffix : '') + ' — ' + d.name,
                              ' role="tab" data-i="' + i + '" aria-selected="' + !!d.current + '"')).join('') +
         b('dnav', '›', 'next', at >= DOCS.length - 1 ? ' disabled' : '');
       strip.addEventListener('click', e => {{
