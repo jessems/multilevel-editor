@@ -619,25 +619,29 @@ PAGE = """<!DOCTYPE html>
   /* ---------- main tools (top right of the reading column) + variant dialog ---------- */
   .main-tools {{ display:flex; justify-content:flex-end; align-items:center; gap:12px; margin:-6px 0 16px; }}
   /* document tabs: the skeleton and its variants (Original, v1, v2 …) as a
-     strip sitting on the outline's title row — the same quiet segmented
-     control as a bullet's version tabs, led by the branch glyph; ‹ › step
-     through the family, the active tab is this document. Its border shows on
-     hover, when the strip becomes a folder tab whose frame runs on around
-     the title it governs. */
-  .dtabs {{ display:flex; align-items:center; gap:1px; flex-wrap:wrap; width:max-content; max-width:calc(100% - 28px);
-           margin:0 0 0 32px; padding:1px 2px 1px 7px; position:relative; z-index:1;
+     strip sitting on the whole outline — the same quiet segmented control as
+     a bullet's version tabs, led by the branch glyph; ‹ › step through the
+     family, the active tab is this document. Its border shows on hover, when
+     the strip becomes a folder tab whose frame runs on around the ENTIRE
+     outline it governs: the tabs pertain to the document, not to a bullet. */
+  .dtabs {{ display:flex; align-items:center; gap:1px; flex-wrap:wrap; width:max-content; max-width:100%;
+           margin:0 0 0 -12px; padding:1px 2px 1px 7px; position:relative; z-index:1;
            background:color-mix(in srgb, var(--acc) 6%, var(--bg));
            --vframe:color-mix(in srgb, var(--acc) 25%, var(--line));
            border:1px solid transparent; border-radius:8px; transition:border-color .12s;
            font:500 11.5px/1 var(--sans); }}
   .dtabs:empty {{ display:none; }}
-  body.has-tabs #tree > li:first-child {{ margin-top:0; }}        /* the title sits flush under its tabs */
-  body:has(#docTabs:hover, #tree > li:first-child > .row:hover) #docTabs {{
+  body.has-tabs #tree > li:first-child {{ margin-top:0; }}        /* the outline sits flush under its tabs */
+  /* the outline keeps its place on the page; the negative margin only gives
+     the hover frame room to breathe around the text */
+  body.has-tabs #tree {{ margin:0 -12px; padding:8px 12px 12px; border-radius:8px;
+                         transition:box-shadow .12s, background .12s; }}
+  body:has(#docTabs:hover) #docTabs {{
     border-color:var(--vframe); border-bottom-color:transparent;
     border-bottom-left-radius:0; border-bottom-right-radius:0; }}
-  body:has(#docTabs:hover, #tree > li:first-child > .row:hover) #tree > li:first-child > .row > .main {{
-    box-shadow:0 0 0 1px var(--vframe, color-mix(in srgb, var(--acc) 25%, var(--line)));
-    background:color-mix(in srgb, var(--acc) 6%, var(--bg)); }}
+  body:has(#docTabs:hover) #tree {{
+    box-shadow:0 0 0 1px color-mix(in srgb, var(--acc) 25%, var(--line));
+    background:color-mix(in srgb, var(--acc) 6%, var(--bg)); border-top-left-radius:0; }}
   .dtabs::before {{ content:''; flex:0 0 11px; height:11px; margin-right:3px; background:var(--acc); opacity:.8;
     -webkit-mask:var(--icon) center/contain no-repeat; mask:var(--icon) center/contain no-repeat;
     --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 3v12'/%3E%3Ccircle cx='18' cy='6' r='3'/%3E%3Ccircle cx='6' cy='18' r='3'/%3E%3Cpath d='M18 9a9 9 0 0 1-9 9'/%3E%3C/svg%3E"); }}
