@@ -30,6 +30,16 @@ back to the `.md` only when you press **Save**.
   when you remove it; when the margin is too narrow (sidebar open, small
   window) it sits at the end of the row instead. Display only — nothing is
   written to the file.
+- **Console** — an activity log docked at the bottom like a browser's devtools
+  drawer — **minimised by default** to a one-line bar showing the latest
+  entry (plus a count of problems); click it or press Ctrl+` to open a
+  resizable panel. One list, two kinds of entry: **App** — what you did in
+  the editor (edit with before/after, insert, move, indent/outdent, delete,
+  tag, undo/redo, level switch, Markdown view, navigator jump, settings,
+  save and the files written, refused actions) — and **AI** — each quill
+  request and its reply, with model, backend, command, timing and the full
+  prompt behind a click. Copy and Clear; the log survives the reload after
+  Save and the open state lasts for the tab. Serve mode only.
 - **Navigator** — a left sidebar (toggle: panel icon, top left) listing the
   outline as a tree that **descends with the level switch**, like walking
   down a directory: in mode N every node above level N is expanded and the
