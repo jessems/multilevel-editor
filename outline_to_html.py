@@ -214,12 +214,23 @@ def render_node(node) -> str:
     )
 
 
+DARK_VARS = (
+    "--bg:#1c1b19; --ink:#e7e2d8; --mut:#9d968a; --acc:#d2ab6a; --line:#37342f; "
+    "--hover:#26241f; --chip:#33302a; --codebg:#2b2925; --editbg:#232119; --btn:#26241f; "
+    "--sel:#4a3f2a; --ok:#8fc48f; --err:#e08b7d; "
+    "--t1:#82b6d6; --t2:#d2ab6a; --t3:#8fc48f; --t4:#d49bd4;"
+)
+
 PAGE = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title}</title>
+<script>
+  try {{ const t = localStorage.getItem('multilevel-editor.theme');
+        if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; }} catch {{}}
+</script>
 <style>
   :root {{
     color-scheme: light dark;
@@ -231,14 +242,12 @@ PAGE = """<!DOCTYPE html>
     --sel:#e9dcc2; --ok:#3d7a3d; --err:#a33b2e;
     --t1:#3f6e8e; --t2:#8a5a24; --t3:#3d7a3d; --t4:#8f4a8f;
   }}
+  /* dark palette: follows the OS unless the header toggle pinned a theme (html[data-theme]) */
   @media (prefers-color-scheme: dark) {{
-    :root {{
-      --bg:#1c1b19; --ink:#e7e2d8; --mut:#9d968a; --acc:#d2ab6a; --line:#37342f;
-      --hover:#26241f; --chip:#33302a; --codebg:#2b2925; --editbg:#232119; --btn:#26241f;
-      --sel:#4a3f2a; --ok:#8fc48f; --err:#e08b7d;
-      --t1:#82b6d6; --t2:#d2ab6a; --t3:#8fc48f; --t4:#d49bd4;
-    }}
+    :root:not([data-theme="light"]) {{ {dark_vars} }}
   }}
+  :root[data-theme="dark"] {{ {dark_vars} color-scheme:dark; }}
+  :root[data-theme="light"] {{ color-scheme:light; }}
   html {{ -webkit-text-size-adjust:100%; }}
   body {{ margin:0; background:var(--bg); color:var(--ink);
          font:17px/1.65 var(--serif);
@@ -293,6 +302,9 @@ PAGE = """<!DOCTYPE html>
   #mdBtn:hover, body.mdmode #mdBtn {{ color:var(--ink); }}
   body.mdmode #mdBtn {{ background:var(--chip); }}
   #helpBtn {{ --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01'/%3E%3C/svg%3E"); }}
+  /* light/dark toggle — shows the theme a click switches TO: a moon on light, a sun on dark */
+  #themeBtn {{ --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z'/%3E%3C/svg%3E"); }}
+  html.theme-dark #themeBtn {{ --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='5'/%3E%3Cpath d='M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42'/%3E%3C/svg%3E"); }}
   #helpBtn[aria-expanded="true"] {{ color:var(--acc) !important; background:var(--hover); }}
   /* the key card */
   #help {{ position:absolute; top:calc(100% + 8px); right:14px; width:320px; max-width:calc(100vw - 28px);
@@ -640,6 +652,7 @@ PAGE = """<!DOCTYPE html>
   <div class="hr">
     <button id="mdBtn" title="edit the raw markdown">Markdown</button>
     <button id="helpBtn" class="ibtn" aria-label="how to edit" title="how to edit" aria-controls="help" aria-expanded="false"></button>
+    <button id="themeBtn" class="ibtn" type="button"></button>
     <span class="sep"></span>
     <button id="saveBtn" disabled title="write the skeleton and the draft">Save<kbd>⌘S</kbd></button>
     <button id="menuBtn" class="ibtn" aria-label="settings" title="settings"></button>
@@ -1655,6 +1668,30 @@ PAGE = """<!DOCTYPE html>
     markDirty();
   }});
 
+  // ---- light/dark toggle (header, left of Save) ----
+  // no stored choice = follow the OS; a click pins the opposite of what is showing,
+  // and a pin that lands back on the OS theme is dropped so the page tracks the OS again
+  const THEME_KEY = 'multilevel-editor.theme';
+  const themeBtn = document.getElementById('themeBtn');
+  const osDark = matchMedia('(prefers-color-scheme: dark)');
+  function applyTheme() {{
+    const pinned = document.documentElement.dataset.theme;
+    const dark = pinned ? pinned === 'dark' : osDark.matches;
+    document.documentElement.classList.toggle('theme-dark', dark);
+    const label = dark ? 'switch to light mode' : 'switch to dark mode';
+    themeBtn.title = label; themeBtn.setAttribute('aria-label', label);
+  }}
+  themeBtn.addEventListener('click', () => {{
+    const next = document.documentElement.classList.contains('theme-dark') ? 'light' : 'dark';
+    const follow = (next === 'dark') === osDark.matches;
+    if (follow) delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = next;
+    try {{ follow ? localStorage.removeItem(THEME_KEY) : localStorage.setItem(THEME_KEY, next); }} catch {{}}
+    applyTheme();
+  }});
+  osDark.addEventListener('change', applyTheme);
+  applyTheme();
+
   // ---- settings sidebar (top-right menu) ----
   const sidebar = document.getElementById('sidebar');
   const menuBtn = document.getElementById('menuBtn');
@@ -1937,6 +1974,7 @@ def build_page(source: Path, editable: bool) -> str:
         tree=body,
         editable="true" if editable else "false",
         bodycls="" if editable else "readonly",
+        dark_vars=DARK_VARS,
         filehash=combined_hash(source),
         scheme=meta["scheme"],
         orphans=orphans,

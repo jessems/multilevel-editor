@@ -61,7 +61,9 @@ back to the `.md` only when you press **Save**.
   always shown: once staged it follows its level, with a notice if that
   hides it.
 - **Reading typography** — a book-like serif at a comfortable measure, with
-  a dark palette that follows the system colour scheme.
+  a dark palette that follows the system colour scheme; the sun/moon button
+  in the header flips light/dark (also in read-only exports), remembered per
+  browser — flipping back to the system's scheme returns to following it.
 - **Click to edit in place** — the bullet's raw markdown, same font and
   position as the rendered view. Enter or click away stages the edit; Esc
   cancels.
@@ -155,7 +157,7 @@ back to the `.md` only when you press **Save**.
   textarea of the current staged state: bulk-edit, add, delete, re-indent
   bullets, then toggle back or Save directly.
 - **One-row header** — document name and file on the left, the level switch
-  centred, Markdown / help / Save / settings on the right; status messages
+  centred, Markdown / help / light-dark / Save / settings on the right; status messages
   drop below the bar as a toast, and the **?** button opens a key card with
   the editing gestures and shortcuts.
 - **Save with conflict safety** — the Save button or **Cmd/Ctrl+S** writes the

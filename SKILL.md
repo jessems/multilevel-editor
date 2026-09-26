@@ -72,6 +72,9 @@ warning. Save serializes the whole outline from the page and rewrites the
   adding, deleting, and re-indenting bullets — then toggle back to Outline
   (the tree rebuilds, chips recompute) or Save directly. Only the outline body
   is shown; frontmatter stays untouched.
+- **Light/dark toggle** (upstream v0.15.0) — sun/moon icon button in the header, between **?** and
+  Save (the only header action left in read-only exports). Default follows the OS scheme; a click
+  pins the other theme (remembered per browser); flipping back to the OS scheme un-pins it.
 - **Citation needed** (upstream v0.13.0) — a paragraph heading (numbered bullet) whose text
   holds a `[cite]` placeholder (`[cite]`, `[cite: …]`) gets a quiet
   *Citation needed* note (quote-mark icon, muted text) in the right margin, level with its first line
