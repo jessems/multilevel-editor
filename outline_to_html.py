@@ -753,7 +753,9 @@ PAGE = """<!DOCTYPE html>
   .nlabel.nh1, .nlabel.nh2 {{ font-weight:600; }}
   /* the skeleton's variants share the outline's top level, each drawn as a
      full tree; the open document's title row is tinted, a suffix names a variant */
-  #nav > ul > li.here > .nrow {{ background:var(--chip); }}
+  #nav > ul > li.here > .nrow {{ background:var(--chip); }}                 /* the active tab's look… */
+  #nav > ul > li.here > .nrow > .nlabel {{ color:var(--acc); }}
+  #nav > ul > li.pick > .nrow {{ box-shadow:inset 0 0 0 1.5px var(--acc); }}   /* …and a compare pick's ring */
   .nsuffix {{ color:var(--mut); font-weight:500; }}
   .nlabel.npara {{ color:var(--mut); }}
   .ncaret:focus-visible, .nlabel:focus-visible {{ outline:2px solid var(--acc); outline-offset:-2px; }}
@@ -853,6 +855,7 @@ PAGE = """<!DOCTYPE html>
   const SOURCE = {source_js};
   const DOC = {doc_js};                        // the family member this page edits
   const DOCS = {docs_json};                    // the skeleton and its variants
+  let comparePicks = [];                       // DOCS indexes picked for comparison (mirrored in the navigator)
   const FAMILY = {family_json};                // the family's level shape: {{h, para}} or null
   const DEFAULT_INSTRUCTION = {default_instruction_js};
   const GENERATING = {generating_json};        // set on the page of a variant still being written
@@ -999,14 +1002,15 @@ PAGE = """<!DOCTYPE html>
     }};
     const top = nav.scrollTop;
     const items = [];
-    DOCS.forEach(doc => {{
+    DOCS.forEach((doc, di) => {{
       const roots = doc.current ? navNodesFromRows(rows, H)
                   : doc.pending ? [{{ text: doc.title, h: 1, lvl: 1, index: 0, kids: [], num: 0 }}]
                   : navNodesFromBullets(doc.bullets || [], H);
       const built = roots.map(n => build(n, doc));
       if (built[0]) {{
         suffixed(built[0], doc.suffix);
-        built[0].classList.toggle('here', !!doc.current);
+        built[0].classList.toggle('here', !!doc.current);          // the active tab…
+        built[0].classList.toggle('pick', comparePicks.includes(di));   // …and the compare picks
         built[0].querySelector(':scope > .nrow > .nlabel').title = doc.name;
       }}
       items.push(...built);
@@ -1726,9 +1730,10 @@ PAGE = """<!DOCTYPE html>
       }}
       function renderCompare() {{
         tabs().forEach((t, i) => t.classList.toggle('pick', cmp.on && cmp.picks.includes(i)));
+        comparePicks = cmp.on ? cmp.picks.slice() : [];
         const ready = cmp.on && cmp.picks.length === 2;
         document.body.classList.toggle('comparing', ready);
-        if (!ready) {{ compare.hidden = true; compare.innerHTML = ''; return; }}
+        if (!ready) {{ compare.hidden = true; compare.innerHTML = ''; syncLevels(); return; }}   // navigator mirrors the picks
         compare.innerHTML = cmp.picks.map(i => {{
           const d = DOCS[i];
           return '<section class="cmp-pane"><h2 class="cmp-head"><b>' + esc(tabLabel(d)) + '</b> · ' +
