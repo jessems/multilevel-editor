@@ -28,6 +28,8 @@ prompts a warning.
 Self-contained: stdlib only, inline CSS/JS, no network.
 """
 
+from __future__ import annotations
+
 import argparse
 import hashlib
 import html
@@ -38,6 +40,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 import webbrowser
 from datetime import date
 from urllib.parse import parse_qs, urlparse
@@ -807,14 +810,84 @@ PAGE = """<!DOCTYPE html>
     #nav {{ z-index:5; box-shadow:6px 0 24px rgba(0,0,0,.12); }}
   }}
 
+  /* ---------- console: a devtools-style activity log docked at the bottom ---------- */
+  /* Minimised it is a slim bar (last entry + error/warning counts); opened it
+     is a resizable drawer listing every request, server event, notice and
+     error, newest at the bottom. --con-h is the space it takes, so the reading
+     column and the navigator end above it. */
+  :root {{ --con-h:28px; }}
+  body.readonly {{ --con-h:0px; }}
+  body.readonly #console {{ display:none; }}
+  main {{ padding-bottom:calc(140px + var(--con-h)); }}
+  #nav {{ bottom:var(--con-h); }}
+  #console {{ position:fixed; left:0; right:0; bottom:0; z-index:4; height:var(--con-h);
+             display:flex; flex-direction:column; box-sizing:border-box;
+             background:var(--bg); border-top:1px solid var(--line);
+             font:12px/1.45 var(--mono); color:var(--ink); }}
+  #console.open {{ box-shadow:0 -8px 24px -16px rgba(0,0,0,.35); }}
+  .con-grab {{ position:absolute; left:0; right:0; top:-4px; height:8px; cursor:ns-resize; display:none; }}
+  #console.open .con-grab {{ display:block; }}
+  .con-bar {{ flex:0 0 27px; display:flex; align-items:stretch; }}
+  #console.open .con-bar {{ border-bottom:1px solid var(--line); }}
+  .con-toggle {{ flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:10px; padding:0 10px 0 8px;
+                font:500 11.5px/1 var(--sans); color:var(--mut); cursor:pointer; user-select:none;
+                border:none; background:none; text-align:left; }}
+  .con-toggle:hover {{ color:var(--ink); background:var(--hover); }}
+  .con-toggle:focus-visible {{ outline:2px solid var(--acc); outline-offset:-2px; }}
+  .con-chev {{ flex:0 0 auto; width:0; height:0; border-left:4px solid transparent;
+              border-right:4px solid transparent; border-bottom:5px solid currentColor;
+              transition:transform .12s; }}
+  #console.open .con-chev {{ transform:rotate(180deg); }}
+  .con-title {{ flex:0 0 auto; font-weight:600; letter-spacing:.06em; text-transform:uppercase; font-size:10.5px; }}
+  .con-last {{ flex:1 1 auto; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+              font:11.5px/1 var(--mono); opacity:.85; }}
+  #console.open .con-last {{ visibility:hidden; }}
+  .con-last.err {{ color:var(--err); opacity:1; }}
+  .con-count {{ flex:0 0 auto; display:none; align-items:center; gap:4px; font:600 11px/1 var(--sans);
+               font-variant-numeric:tabular-nums; color:var(--err); }}
+  .con-count.on {{ display:inline-flex; }}
+  .con-count::before {{ content:''; width:7px; height:7px; border-radius:50%; background:currentColor; }}
+  .con-tools {{ flex:0 0 auto; display:none; align-items:center; gap:2px; padding:0 8px;
+               font:500 11.5px/1 var(--sans); }}
+  #console.open .con-tools {{ display:flex; }}
+  .con-tools button {{ font:inherit; color:var(--mut); background:none; border:1px solid transparent;
+                      border-radius:5px; padding:4px 8px; cursor:pointer; }}
+  .con-tools button:hover {{ background:var(--hover); color:var(--ink); }}
+  #conList {{ flex:1 1 auto; overflow-y:auto; margin:0; padding:0; list-style:none; border:none; display:none; }}
+  #console.open #conList {{ display:block; }}
+  #conList li {{ border-bottom:1px solid color-mix(in srgb, var(--line) 60%, transparent); }}
+  .ce {{ display:grid; grid-template-columns:64px 34px minmax(0,1fr) auto; gap:10px;
+        padding:3px 10px; cursor:default; }}
+  .ce.has-detail {{ cursor:pointer; }}
+  .ce.has-detail:hover {{ background:var(--hover); }}
+  .ce-t {{ color:var(--mut); font-variant-numeric:tabular-nums; }}
+  .ce-k {{ color:var(--mut); font:600 10px/1.9 var(--sans); letter-spacing:.06em; text-transform:uppercase; }}
+  .ce-k.k-ai {{ color:var(--t1); }}
+  .ce-m {{ overflow-wrap:anywhere; }}
+  .ce.has-detail .ce-m::before {{ content:'▸ '; color:var(--mut); }}
+  li.expanded .ce.has-detail .ce-m::before {{ content:'▾ '; }}
+  .ce-d {{ color:var(--mut); font-variant-numeric:tabular-nums; white-space:nowrap; }}
+  #conList li.error {{ background:color-mix(in srgb, var(--err) 9%, transparent); }}
+  #conList li.error .ce-m, #conList li.error .ce-k {{ color:var(--err); }}
+  #conList li.warn {{ background:color-mix(in srgb, var(--t2) 9%, transparent); }}
+  #conList li.warn .ce-m {{ color:var(--t2); }}
+  .ce-detail {{ display:none; margin:0 10px 6px 118px; padding:6px 10px; max-height:320px; overflow:auto;
+               background:var(--codebg); border-radius:5px; white-space:pre-wrap; overflow-wrap:anywhere;
+               font:11.5px/1.5 var(--mono); }}
+  li.expanded .ce-detail {{ display:block; }}
+  .con-empty {{ padding:10px; color:var(--mut); font-family:var(--sans); }}
+
   @media (max-width: 640px) {{
     body {{ font-size:16px; }}
+    .ce {{ grid-template-columns:62px minmax(0,1fr) auto; }}
+    .ce-k {{ display:none; }}
+    .ce-detail {{ margin-left:10px; }}
     header {{ grid-template-columns:minmax(0,1fr) auto; row-gap:6px; padding:8px 10px; }}
     .hr {{ grid-column:2; }}
     .levels-row {{ grid-column:1 / -1; grid-row:2; }}
     .levels-row:has(#levels:empty), body.mdmode .levels-row {{ display:none; }}
     #saveBtn kbd, .hr .sep {{ display:none; }}
-    main {{ padding:18px 14px 100px; }}
+    main {{ padding:18px 14px calc(100px + var(--con-h)); }}
     :root {{ --indent:18px; }}
     .h1 {{ font-size:23px; }}
     .h2 {{ font-size:19px; }}
@@ -886,6 +959,21 @@ PAGE = """<!DOCTYPE html>
   </div>
 </dialog>
 <div id="insertHint"><button class="plus" type="button" title="insert bullet" aria-label="insert bullet">+</button></div>
+<section id="console" aria-label="console">
+  <div class="con-grab" title="drag to resize"></div>
+  <div class="con-bar">
+    <button class="con-toggle" type="button" aria-controls="conList" aria-expanded="false" title="console (Ctrl+`)">
+      <span class="con-chev"></span><span class="con-title">Console</span>
+      <span class="con-last"></span>
+      <span class="con-count" title="problems"></span>
+    </button>
+    <span class="con-tools">
+      <button type="button" id="conCopy" title="copy the log as text">Copy</button>
+      <button type="button" id="conClear" title="clear the log">Clear</button>
+    </span>
+  </div>
+  <ul id="conList" role="log" aria-live="off"></ul>
+</section>
 <script>
   const EDITABLE = {editable};
   const FILEHASH = "{filehash}";
@@ -1076,6 +1164,7 @@ PAGE = """<!DOCTYPE html>
       navOverride.set(item.navLi || item.navDoc + ':' + item.navAt, open);
       if (open) item.querySelectorAll(':scope > ul > li.deep').forEach(k => k.classList.remove('deep'));
     }} else if (e.target.closest('.nlabel')) {{
+      conLog('app', 'info', 'jumped to ' + (item.navLi ? conName(item.navLi) : item.navDoc));
       if (item.navLi) revealBullet(item.navLi);
       else location.href = '?doc=' + encodeURIComponent(item.navDoc) + '&at=' + item.navAt +
                            '&level=' + activeLevel;              // another member: open it there, same level
@@ -1219,7 +1308,7 @@ PAGE = """<!DOCTYPE html>
   }}
   levelBar.addEventListener('click', e => {{
     const b = e.target.closest('button');
-    if (b) showLevels(+b.dataset.level);
+    if (b) {{ showLevels(+b.dataset.level); conLog('app', 'info', 'view: ' + b.title); }}
   }});
   {{
     let stored = null;
@@ -1230,8 +1319,147 @@ PAGE = """<!DOCTYPE html>
     else if (parseInt(stored, 10) > 0) showLevels(parseInt(stored, 10), false);
     else syncLevels();
   }}
+  // ---- console: an activity log docked at the bottom, like a devtools drawer ----
+  // One list of what happened in this session: the edits made in the app
+  // (edit, insert, move, indent, delete, tag, undo/redo, level and view
+  // switches, save) and the conversations with the AI (the quill: what was
+  // asked, of which model and backend, what came back and how long it took —
+  // click an entry for the prompt and the reply). Entries live in
+  // sessionStorage, so the reload after Save keeps them and a new tab starts
+  // fresh. Minimised by default to a one-line bar; opening lasts for the tab,
+  // the height is remembered. Ctrl+` toggles it, Esc inside it minimises it.
+  const conEl = document.getElementById('console');
+  const conList = document.getElementById('conList');
+  const conBar = conEl.querySelector('.con-toggle');
+  const conLast = conEl.querySelector('.con-last');
+  const conErr = conEl.querySelector('.con-count');
+  const CON_KEY = 'multilevel-editor.console:' + SOURCE;
+  const CON_OPEN_KEY = 'multilevel-editor.console-open';
+  const CON_H_KEY = 'multilevel-editor.console-height';
+  const CON_BAR = 28, CON_MAX = 500;
+  let conEntries = [];            // {{id, t, kind: app|ai, level, msg, detail?, ms?}}
+  const conExpanded = new Set();
+  try {{ conEntries = JSON.parse(sessionStorage.getItem(CON_KEY) || '[]'); }} catch {{}}
+  if (!Array.isArray(conEntries)) conEntries = [];
+  function conLog(kind, level, msg, detail, ms) {{
+    const e = {{ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+                t: Date.now(), kind, level: level || 'info', msg: String(msg) }};
+    if (detail !== undefined && detail !== null && detail !== '') e.detail = detail;
+    if (ms !== undefined) e.ms = ms;
+    conEntries = conEntries.concat(e).slice(-CON_MAX);
+    try {{ sessionStorage.setItem(CON_KEY, JSON.stringify(conEntries)); }} catch {{}}
+    conRender();
+    return e;
+  }}
+  // how a bullet is named in the log: its paragraph number (if any) and the start of its text
+  function conName(li) {{
+    if (!li) return 'the top level';
+    const t = li.querySelector(':scope > .row .txt');
+    const raw = t ? t.dataset.raw.replace(/^#{{1,6}}\\s+/, '') : '';
+    const num = li.querySelector(':scope > .row > .main > .pnum');
+    const cut = raw.length > 48 ? raw.slice(0, 48) + '…' : raw;
+    const quoted = /^["“'‘]/.test(cut) ? cut : '“' + (cut || '…') + '”';   // no doubled quotes
+    return (num ? '¶' + num.textContent + ' ' : '') + quoted;
+  }}
+  const pad = (n, w) => String(n).padStart(w, '0');
+  const conTime = t => {{ const d = new Date(t);
+    return pad(d.getHours(), 2) + ':' + pad(d.getMinutes(), 2) + ':' + pad(d.getSeconds(), 2); }};
+  const conMs = ms => ms >= 1000 ? (ms / 1000).toFixed(1) + ' s' : Math.round(ms) + ' ms';
+  const conText = d => typeof d === 'string' ? d : Object.entries(d).map(([k, v]) =>
+    k + ':' + (typeof v === 'string' && v.includes('\\n') ? '\\n' + v.replace(/^/gm, '  ')
+               : ' ' + (typeof v === 'string' ? v : JSON.stringify(v)))).join('\\n');
+  function conItem(e) {{
+    const li = document.createElement('li');
+    li.className = e.level;
+    li.dataset.id = e.id;
+    if (conExpanded.has(e.id)) li.classList.add('expanded');
+    const row = document.createElement('div');
+    row.className = 'ce' + (e.detail !== undefined ? ' has-detail' : '');
+    const cell = (cls, text) => {{ const s = document.createElement('span'); s.className = cls; s.textContent = text; return s; }};
+    row.append(cell('ce-t', conTime(e.t)), cell('ce-k k-' + e.kind, e.kind === 'ai' ? 'AI' : 'App'),
+               cell('ce-m', e.msg), cell('ce-d', e.ms !== undefined ? conMs(e.ms) : ''));
+    li.append(row);
+    if (e.detail !== undefined) {{
+      const pre = document.createElement('pre');
+      pre.className = 'ce-detail';
+      pre.textContent = conText(e.detail);
+      li.append(pre);
+    }}
+    return li;
+  }}
+  function conRender() {{
+    const errs = conEntries.filter(e => e.level === 'error' || e.level === 'warn').length;
+    conErr.textContent = errs; conErr.classList.toggle('on', errs > 0);
+    const last = conEntries[conEntries.length - 1];
+    conLast.textContent = last ? conTime(last.t) + '  ' + (last.kind === 'ai' ? 'AI · ' : '') + last.msg : 'no activity yet';
+    conLast.classList.toggle('err', !!last && last.level !== 'info');
+    if (!conEl.classList.contains('open')) return;
+    const atBottom = conList.scrollHeight - conList.scrollTop - conList.clientHeight < 24;
+    conList.replaceChildren(...conEntries.map(conItem));
+    if (!conEntries.length) {{
+      const li = document.createElement('li');
+      li.className = 'con-empty';
+      li.textContent = 'nothing yet — edits and AI requests will appear here';
+      conList.append(li);
+    }}
+    if (atBottom) conList.scrollTop = conList.scrollHeight;
+  }}
+  const conHeight = () => {{
+    let h = 260;
+    try {{ h = parseInt(localStorage.getItem(CON_H_KEY), 10) || h; }} catch {{}}
+    return Math.max(120, Math.min(h, innerHeight - 120));
+  }};
+  function conOpen(open, remember = true) {{
+    conEl.classList.toggle('open', open);
+    conBar.setAttribute('aria-expanded', String(open));
+    document.documentElement.style.setProperty('--con-h', (open ? conHeight() : CON_BAR) + 'px');
+    if (remember) try {{ sessionStorage.setItem(CON_OPEN_KEY, open ? '1' : ''); }} catch {{}}
+    if (open) {{ conRender(); conList.scrollTop = conList.scrollHeight; }}
+  }}
+  conBar.addEventListener('click', () => conOpen(!conEl.classList.contains('open')));
+  document.addEventListener('keydown', e => {{
+    if (e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'Backquote') {{
+      e.preventDefault(); conOpen(!conEl.classList.contains('open'));
+    }} else if (e.key === 'Escape' && e.target.closest && e.target.closest('#console')) conOpen(false);
+  }});
+  conList.addEventListener('click', e => {{
+    const row = e.target.closest('.ce.has-detail');
+    if (!row || String(getSelection())) return;       // selecting text is not a toggle
+    const li = row.parentElement;
+    li.classList.toggle('expanded');
+    if (li.classList.contains('expanded')) conExpanded.add(li.dataset.id); else conExpanded.delete(li.dataset.id);
+  }});
+  document.getElementById('conClear').addEventListener('click', () => {{
+    conEntries = []; conExpanded.clear();
+    try {{ sessionStorage.removeItem(CON_KEY); }} catch {{}}
+    conRender();
+  }});
+  document.getElementById('conCopy').addEventListener('click', async () => {{
+    const lines = conEntries.map(e =>
+      conTime(e.t) + '  ' + (e.kind === 'ai' ? 'AI ' : 'App') + '  ' + e.msg + (e.ms !== undefined ? '  (' + conMs(e.ms) + ')' : '') +
+      (e.detail !== undefined ? '\\n' + conText(e.detail).replace(/^/gm, '    ') : ''));
+    try {{ await navigator.clipboard.writeText(lines.join('\\n')); flash('console copied'); }}
+    catch (err) {{ flash('could not copy: ' + err.message, 'error'); }}
+  }});
+  // drag the drawer's top edge to resize it
+  conEl.querySelector('.con-grab').addEventListener('pointerdown', e => {{
+    e.preventDefault();
+    const grab = e.currentTarget;
+    grab.setPointerCapture(e.pointerId);
+    const move = ev => {{
+      const h = Math.max(120, Math.min(innerHeight - ev.clientY, innerHeight - 120));
+      document.documentElement.style.setProperty('--con-h', h + 'px');
+    }};
+    const up = () => {{
+      grab.removeEventListener('pointermove', move); grab.removeEventListener('pointerup', up);
+      try {{ localStorage.setItem(CON_H_KEY, String(conEl.offsetHeight)); }} catch {{}}
+    }};
+    grab.addEventListener('pointermove', move); grab.addEventListener('pointerup', up);
+  }});
+
   let flashTimer = null;
-  function flash(msg, cls) {{
+  function flash(msg, cls, logged) {{
+    if (msg && cls === 'error' && !logged) conLog('app', 'warn', msg);   // a refused action
     status.textContent = msg; status.className = cls || '';
     clearTimeout(flashTimer);
     if (msg) flashTimer = setTimeout(() => {{ status.textContent = ''; status.className = ''; }}, 2500);
@@ -1291,6 +1519,8 @@ PAGE = """<!DOCTYPE html>
     span.dataset.tag = next || '';
     renumberChips();
     markDirty();
+    conLog('app', 'info', (next ? 'tagged ' : 'untagged ') + conName(span.closest('li')) +
+           (next ? ' as ' + (sch.titles[next] || next) : ''));
   }}
 
   // client-side mirror of the server's render_inline
@@ -1558,11 +1788,13 @@ PAGE = """<!DOCTYPE html>
     const m = undoStack.pop();
     if (!m) {{ flash('nothing to undo'); return; }}
     placeAt(m.li, m.before); redoStack.push(m); flash(m.what + ' undone');
+    conLog('app', 'info', 'undid ' + m.what + ' of ' + conName(m.li));
   }}
   function redoMove() {{
     const m = redoStack.pop();
     if (!m) {{ flash('nothing to redo'); return; }}
     placeAt(m.li, m.after); undoStack.push(m); flash(m.what + ' redone');
+    conLog('app', 'info', 'redid ' + m.what + ' of ' + conName(m.li));
   }}
   document.addEventListener('keydown', e => {{
     if (!EDITABLE || !(e.metaKey || e.ctrlKey) || e.altKey || e.key.toLowerCase() !== 'z') return;
@@ -1584,13 +1816,16 @@ PAGE = """<!DOCTYPE html>
       mdview.value = mdBaseline;
       document.body.classList.add('mdmode');
       mdBtn.textContent = 'Outline';
+      conLog('app', 'info', 'opened the Markdown view');
     }} else {{
       if (mdview.value !== mdBaseline) {{
         const bullets = parseMarkdown(mdview.value);
         if (!bullets.length) {{ flash('no bullets found — fix the markdown first', 'error'); return; }}
         buildTree(bullets);
         markDirty();
-      }}
+        conLog('app', 'info', 'applied Markdown edits — ' + bullets.length + ' bullets',
+               {{ before: mdBaseline, after: mdview.value }});
+      }} else conLog('app', 'info', 'closed the Markdown view — no changes');
       document.body.classList.remove('mdmode');
       mdBtn.textContent = 'Markdown';
     }}
@@ -1626,6 +1861,8 @@ PAGE = """<!DOCTYPE html>
     li.remove();
     if (from) toLeafIfEmpty(from);
     recordChange(li, before, null, 'delete');
+    const nested = li.querySelectorAll('li').length;
+    conLog('app', 'info', 'deleted ' + conName(li) + (nested ? ' with ' + nested + ' nested' : ''));
     renumberChips(); markDirty();
     flash('deleted · ⌘Z to undo');
   }}
@@ -1650,11 +1887,16 @@ PAGE = """<!DOCTYPE html>
     const existing = [...li.querySelectorAll(':scope > ul > li.pbody > .row .txt')].map(t => t.dataset.raw);
     gen.classList.add('busy'); gen.title = 'writing…';
     flash('writing the paragraph…');
+    const who = conName(li);
+    conLog('ai', 'info', 'asked to write ' + who + (existing.length ? ' (a fresh version)' : ''));
+    const t0 = performance.now();
+    let info = {{}};
     try {{
       const r = await fetch('/generate', {{ method: 'POST',
         headers: {{'Content-Type': 'application/json'}},
         body: JSON.stringify({{ doc: DOC, outline: toMarkdown(serialize()), target: span.dataset.raw, path, existing }}) }});
       const data = await r.json();
+      info = data.info || {{}};
       if (!r.ok) throw new Error(data.error || r.status);
       const text = (data.text || '').replace(/\\s+/g, ' ').trim();
       if (!text) throw new Error('the model returned no text');
@@ -1669,9 +1911,14 @@ PAGE = """<!DOCTYPE html>
       recordChange(nb, null, posOf(nb), 'generate');
       showLevels(99);                              // make sure the written level is on screen
       renumberChips(); markDirty();
+      conLog('ai', 'info', 'wrote ' + who + ' — ' + text.split(' ').length + ' words via ' +
+             (info.backend || 'the model') + (info.model ? ' (' + info.model + ')' : ''),
+             Object.assign({{ reply: text }}, info), performance.now() - t0);
       flash(existing.length ? 'written · earlier text kept below it · ⌘Z to undo' : 'written · ⌘Z to undo');
     }} catch (err) {{
-      flash('could not write the paragraph: ' + err.message, 'error');
+      conLog('ai', 'error', 'could not write ' + who + ': ' + err.message,
+             Object.assign({{ error: err.message }}, info), performance.now() - t0);
+      flash('could not write the paragraph: ' + err.message, 'error', true);
     }} finally {{
       gen.classList.remove('busy'); gen.title = 'write this paragraph';
     }}
@@ -1796,12 +2043,17 @@ PAGE = """<!DOCTYPE html>
     label.textContent = 'Regenerating';
     li.querySelector(':scope > .row').after(label);
     alignToText(label, li);
+    const who = conName(li);
+    conLog('ai', 'info', 'asked to rewrite ' + who + ': ' + prompt);
+    const t0 = performance.now();
+    let info = {{}};
     try {{
       const r = await fetch('/rewrite', {{ method: 'POST',
         headers: {{'Content-Type': 'application/json'}},
         body: JSON.stringify({{ doc: DOC, outline: toMarkdown(bullets), index, target: source, prompt,
                                 ...bulletKind(li) }}) }});
       const data = await r.json();
+      info = data.info || {{}};
       if (!r.ok) throw new Error(data.error || r.status);
       const text = (data.text || '').replace(/\\s+/g, ' ').trim();
       if (!text) throw new Error('the model returned no text');
@@ -1814,9 +2066,14 @@ PAGE = """<!DOCTYPE html>
       setBulletText(li, text);
       renderTabs(li);
       renumberChips(); markDirty();
+      conLog('ai', 'info', 'rewrote ' + who + ' as v' + v.list.length + ' via ' +
+             (info.backend || 'the model') + (info.model ? ' (' + info.model + ')' : ''),
+             Object.assign({{ reply: text }}, info), performance.now() - t0);
       flash('rewritten as v' + v.list.length + ' · tabs above the bullet switch versions');
     }} catch (err) {{
-      flash('AI edit failed: ' + err.message, 'error');
+      conLog('ai', 'error', 'could not rewrite ' + who + ': ' + err.message,
+             Object.assign({{ error: err.message }}, info), performance.now() - t0);
+      flash('AI edit failed: ' + err.message, 'error', true);
     }} finally {{
       li.classList.remove('regen');
       label.remove();
@@ -1998,6 +2255,7 @@ PAGE = """<!DOCTYPE html>
       if (done) return;
       const val = span.textContent.replace(/\\n+/g, ' ').trim();
       if (!val || val === span.dataset.raw) {{ cancel(); return; }}
+      const oldRaw = span.dataset.raw;
       // a trailing ' {{X}}' typed inline becomes the bullet's tag
       const st = splitTag(val);
       span.dataset.raw = st.text.trim();
@@ -2015,6 +2273,9 @@ PAGE = """<!DOCTYPE html>
         flash('inserted · ⌘Z to undo');
       }}
       renumberChips();                              // heading-ness may have changed
+      if (liEl) conLog('app', 'info', (oldRaw ? 'edited ' : 'inserted ') + conName(liEl) +
+                       (oldRaw ? '' : ' under ' + conName(parentLiOf(liEl))),
+                       oldRaw ? {{ before: oldRaw, after: span.dataset.raw }} : undefined);
       if (liEl && liEl.classList.contains('lvhide'))
         flash('staged, but hidden at this level — pick a deeper level to see it', 'error');
       markDirty();
@@ -2046,7 +2307,8 @@ PAGE = """<!DOCTYPE html>
           moved = true;
         }}
       }}
-      if (moved) {{ recordMove(li, before); renumberChips(); markDirty(); }}
+      if (moved) {{ recordMove(li, before); renumberChips(); markDirty();
+        conLog('app', 'info', (out ? 'outdented ' : 'indented ') + conName(li)); }}
       span.focus();
       if (span.firstChild) {{
         const r = document.createRange();
@@ -2234,6 +2496,7 @@ PAGE = """<!DOCTYPE html>
     recordMove(dragLi, before);
     renumberChips();
     markDirty();
+    conLog('app', 'info', 'moved ' + conName(dragLi) + ' ' + where + ' ' + conName(li));
   }});
 
   // ---- light/dark toggle (header, left of Save) ----
@@ -2287,11 +2550,13 @@ PAGE = """<!DOCTYPE html>
   setTagging.addEventListener('change', () => {{
     settings.tagging = setTagging.checked;
     saveSettings(); applySettings();
+    conLog('app', 'info', 'paragraph tagging ' + (settings.tagging ? 'on' : 'off'));
   }});
   document.querySelectorAll('input[name="scheme"]').forEach(r =>
     r.addEventListener('change', () => {{
       // scheme is document metadata: staged now, written to the sidecar on Save
-      if (r.checked) {{ settings.scheme = r.value; applySettings(); markDirty(); }}
+      if (r.checked) {{ settings.scheme = r.value; applySettings(); markDirty();
+        conLog('app', 'info', 'tagging scheme → ' + SCHEMES[r.value].label); }}
     }}));
   applySettings();   // reinterpret server-rendered badges per settings
   {{
@@ -2319,10 +2584,15 @@ PAGE = """<!DOCTYPE html>
         headers: {{'Content-Type': 'application/json'}},
         body: JSON.stringify({{ doc: DOC, hash: FILEHASH, scheme: settings.scheme, bullets,
                                 draft_orphans: DRAFT_ORPHANS }}) }});
-      if (!r.ok) throw new Error((await r.json()).error || r.status);
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || r.status);
+      conLog('app', 'info', 'saved — ' + bullets.length + ' bullets → ' + (data.files || []).join(', '));
       dirty = false;
       location.reload();
-    }} catch (err) {{ flash('save failed: ' + err.message, 'error'); }}
+    }} catch (err) {{
+      conLog('app', 'error', 'save failed: ' + err.message);
+      flash('save failed: ' + err.message, 'error', true);
+    }}
   }}
   saveBtn.addEventListener('click', doSave);
   document.addEventListener('keydown', e => {{
@@ -2331,6 +2601,11 @@ PAGE = """<!DOCTYPE html>
     e.preventDefault();                       // never the browser's save-page dialog
     if (dirty) doSave(); else flash('no changes to save');
   }});
+  {{
+    let open = false;
+    try {{ open = sessionStorage.getItem(CON_OPEN_KEY) === '1'; }} catch {{}}
+    conOpen(open, false);
+  }}
 </script>
 </body>
 </html>
@@ -2458,16 +2733,21 @@ def clean_rewrite(text: str, req: dict) -> str:
     return t
 
 
-def generate_text(prompt: str, model: str, cwd: Path, on_text=None) -> str:
+def generate_text(prompt: str, model: str, cwd: Path, info: dict | None = None, on_text=None) -> str:
     """Ask the model and return its text. `on_text(accumulated)` is called as
     the reply streams in. Backends, in order: the `anthropic` SDK when it is
     installed and has credentials; otherwise the `claude` CLI (Claude Code) on
-    PATH, run tool-less and non-interactively with partial messages streamed."""
+    PATH, run tool-less and non-interactively with partial messages streamed.
+    What was called (backend, command, exit status, usage) is recorded in
+    `info` for the console."""
+    info = {} if info is None else info
+    info["model"] = model
     try:
         import anthropic  # optional — the tool itself stays stdlib-only
     except ImportError:
         anthropic = None
     if anthropic is not None and (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+        info["backend"] = "anthropic SDK"
         client = anthropic.Anthropic()
         parts = []
         with client.messages.stream(model=model, max_tokens=32000,
@@ -2477,6 +2757,8 @@ def generate_text(prompt: str, model: str, cwd: Path, on_text=None) -> str:
                 if on_text:
                     on_text("".join(parts))
             final = stream.get_final_message()
+        info.update(stop_reason=final.stop_reason, request_id=getattr(final, "_request_id", None),
+                    usage={"input_tokens": final.usage.input_tokens, "output_tokens": final.usage.output_tokens})
         if final.stop_reason == "refusal":
             raise RuntimeError("the model declined this request")
         return "".join(parts)
@@ -2485,10 +2767,11 @@ def generate_text(prompt: str, model: str, cwd: Path, on_text=None) -> str:
         raise RuntimeError("no model backend: install the `claude` CLI, or `pip install anthropic` "
                            "and set ANTHROPIC_API_KEY")
     env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}   # allow nesting inside a session
+    cmd = [cli, "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
+           "--model", model, "--tools", "", "--no-session-persistence"]
+    info.update(backend="claude CLI", command=" ".join(a if a else '""' for a in cmd), cwd=str(cwd))
     proc = subprocess.Popen(
-        [cli, "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
-         "--model", model, "--tools", "", "--no-session-persistence"],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, cwd=str(cwd), env=env,
     )
     proc.stdin.write(prompt)
@@ -2513,15 +2796,21 @@ def generate_text(prompt: str, model: str, cwd: Path, on_text=None) -> str:
             full = "".join(b.get("text", "") for b in obj.get("message", {}).get("content", [])
                            if b.get("type") == "text") or full
         elif kind == "result":
+            if obj.get("usage"):
+                info["usage"] = {k: obj["usage"].get(k) for k in ("input_tokens", "output_tokens")}
             if obj.get("is_error"):
                 result_error = str(obj.get("result") or "claude CLI reported an error")
             elif not parts and not full and obj.get("result"):
                 full = str(obj["result"])
     proc.wait(timeout=600)
+    info["exit_code"] = proc.returncode
+    err_text = proc.stderr.read()
+    if err_text.strip():
+        info["stderr"] = err_text.strip()[-2000:]
     if result_error:
         raise RuntimeError(result_error[-400:])
     if proc.returncode != 0 and not (parts or full):
-        raise RuntimeError((proc.stderr.read() or "claude CLI failed").strip()[-400:])
+        raise RuntimeError((err_text or "claude CLI failed").strip()[-400:])
     return ("".join(parts) if parts else (full or "")).strip()
 
 
@@ -3027,26 +3316,38 @@ def serve(source: Path, port: int, open_browser: bool = True, model: str = "clau
                     self._send(500, json.dumps({"error": str(e)}), "application/json")
                 return
             if self.path == "/generate":
+                # the reply carries what was called (backend, command, usage,
+                # the prompt itself) so the page's console can show the AI side
+                t0, info = time.perf_counter(), {}
                 try:
                     req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                     source = resolve(req.get("doc"))
-                    text = generate_text(build_generate_prompt(req), model, source.parent)
-                    self._send(200, json.dumps({"text": text}), "application/json")
+                    prompt = build_generate_prompt(req)
+                    info["prompt"] = prompt
+                    text = generate_text(prompt, model, source.parent, info)
+                    info["seconds"] = round(time.perf_counter() - t0, 2)
+                    self._send(200, json.dumps({"text": text, "info": info}), "application/json")
                     print(f"  wrote: {req.get('target', '')[:60]!r} ({len(text)} chars)")
                 except Exception as e:  # noqa: BLE001 — report any generation failure to the client
-                    self._send(500, json.dumps({"error": str(e)}), "application/json")
+                    info["seconds"] = round(time.perf_counter() - t0, 2)
+                    self._send(500, json.dumps({"error": str(e), "info": info}), "application/json")
                 return
             if self.path == "/rewrite":
+                t0, info = time.perf_counter(), {}   # reported to the page's console, as for /generate
                 try:
                     req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                     if not req.get("prompt", "").strip():
                         raise ValueError("empty prompt")
                     source = resolve(req.get("doc"))
-                    text = clean_rewrite(generate_text(build_rewrite_prompt(req), model, source.parent), req)
-                    self._send(200, json.dumps({"text": text}), "application/json")
+                    prompt = build_rewrite_prompt(req)
+                    info["prompt"] = prompt
+                    text = clean_rewrite(generate_text(prompt, model, source.parent, info), req)
+                    info["seconds"] = round(time.perf_counter() - t0, 2)
+                    self._send(200, json.dumps({"text": text, "info": info}), "application/json")
                     print(f"  rewrote: {req.get('target', '')[:50]!r} per {req.get('prompt', '')[:40]!r}", flush=True)
                 except Exception as e:  # noqa: BLE001 — report any rewrite failure to the client
-                    self._send(500, json.dumps({"error": str(e)}), "application/json")
+                    info["seconds"] = round(time.perf_counter() - t0, 2)
+                    self._send(500, json.dumps({"error": str(e), "info": info}), "application/json")
                 return
             if self.path != "/save":
                 self._send(404, "not found", "text/plain")
@@ -3086,7 +3387,8 @@ def serve(source: Path, port: int, open_browser: bool = True, model: str = "clau
                 n_written = len(draft_lines) - len(skeleton)
                 if n_written or orphans or draft_path(source).exists():
                     write_draft(source, draft_lines, orphans)
-                self._send(200, json.dumps({"ok": True}), "application/json")
+                files = [p.name for p in (source, tags_path(source), draft_path(source)) if p.exists()]
+                self._send(200, json.dumps({"ok": True, "files": files}), "application/json")
                 print(f"  saved: {len(skeleton)} bullets, {len(tagged)} tags, "
                       f"{n_written} written paragraphs -> {draft_path(source).name}", flush=True)
             except Exception as e:  # noqa: BLE001 — report any save failure to the client
