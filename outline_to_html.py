@@ -683,15 +683,10 @@ PAGE = """<!DOCTYPE html>
             text-align:left; padding:3px 4px; font:inherit; color:var(--ink);
             white-space:nowrap; overflow:hidden; text-overflow:ellipsis; border-radius:4px; }}
   .nlabel.nh1, .nlabel.nh2 {{ font-weight:600; }}
-  /* the top level of the navigator is the FILE family: the skeleton and its variants */
-  #nav li.ndoc {{ margin-top:2px; }}
-  #nav li.ndoc > .nrow > .nlabel {{ font-weight:600; }}
+  /* the skeleton's variants share the outline's top level: other members are
+     links beside this document's title row; a suffix names the variant */
   #nav li.ndoc > .nrow > a.nlabel {{ text-decoration:none; display:block; }}
-  #nav li.ndoc.current-doc > .nrow {{ background:var(--chip); }}
-  #nav li.ndoc > ul {{ padding-left:14px; margin-top:2px; }}
-  .ndocicon::before {{ content:''; display:inline-block; width:13px; height:13px; margin:5px 0 0 1px;
-    background:var(--mut); -webkit-mask:var(--icon) center/contain no-repeat; mask:var(--icon) center/contain no-repeat;
-    --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpath d='M14 2v6h6M16 13H8M16 17H8M10 9H8'/%3E%3C/svg%3E"); }}
+  .nsuffix {{ color:var(--mut); font-weight:500; }}
   .nlabel.npara {{ color:var(--mut); }}
   .ncaret:focus-visible, .nlabel:focus-visible {{ outline:2px solid var(--acc); outline-offset:-2px; }}
   .nnum {{ font:600 10.5px var(--sans); font-variant-numeric:tabular-nums; margin-right:6px; }}
@@ -895,25 +890,40 @@ PAGE = """<!DOCTYPE html>
       return item;
     }}
     const top = nav.scrollTop;
-    // top level: the file family — this document opens onto its outline,
-    // the others are links that load them (unsaved edits prompt on the way out)
+    // the family shares the outline's top level: this document's title row
+    // carries its suffix ("(variant 2)"), the other members sit beside it as
+    // links that load them (unsaved edits prompt on the way out)
     const outline = kidsOf(tree).map(build);
-    navTree.replaceChildren(...DOCS.map(d => {{
+    const suffixed = (label, suffix) => {{
+      if (!suffix) return;
+      const sfx = document.createElement('span');
+      sfx.className = 'nsuffix'; sfx.textContent = ' ' + suffix;
+      label.append(sfx);
+    }};
+    const items = [];
+    DOCS.forEach(d => {{
+      if (d.current) {{
+        const first = outline[0] && outline[0].querySelector(':scope > .nrow > .nlabel');
+        if (first) {{ suffixed(first, d.suffix); first.title = d.name; }}
+        items.push(...outline);
+        return;
+      }}
       const item = document.createElement('li');
-      item.className = 'ndoc' + (d.current ? ' current-doc open' : '');
+      item.className = 'ndoc';
       const row = document.createElement('div');
       row.className = 'nrow';
-      const icon = document.createElement('span');
-      icon.className = 'nspace ndocicon';
-      const label = document.createElement(d.current ? 'span' : 'a');
-      label.className = 'nlabel';
-      label.textContent = d.label; label.title = d.name;
-      if (!d.current) label.href = '?doc=' + encodeURIComponent(d.name);
-      row.append(icon, label);
+      const space = document.createElement('span');
+      space.className = 'nspace';
+      const label = document.createElement('a');
+      label.className = 'nlabel nh1';
+      label.href = '?doc=' + encodeURIComponent(d.name);
+      label.textContent = d.title; label.title = d.name;
+      suffixed(label, d.suffix);
+      row.append(space, label);
       item.append(row);
-      if (d.current) {{ const ul = document.createElement('ul'); ul.append(...outline); item.append(ul); }}
-      return item;
-    }}));
+      items.push(item);
+    }});
+    navTree.replaceChildren(...items);
     nav.scrollTop = top;
   }}
   function revealBullet(li) {{
@@ -2343,13 +2353,29 @@ def combined_hash(source: Path) -> str:
     return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()
 
 
+def doc_title(p: Path) -> str:
+    """The outline's own title: its first bullet, heading marks stripped."""
+    for line in strip_frontmatter(p.read_text(encoding="utf-8")).splitlines():
+        m = BULLET_RE.match(line)
+        if m:
+            return re.sub(r"^#{1,6}\s+", "", m.group(2).strip()).replace("*", "") or p.stem
+    return p.stem
+
+
 def family_docs(base: Path, current: str, jobs=None):
-    docs = [{"name": p.name, "label": doc_label(p, base), "current": p.name == current, "pending": False}
-            for p in family_of(base)]
+    """The skeleton and its variants as the navigator lists them: each by its
+    own title, variants with a suffix — all on the outline's top level."""
+    docs = []
+    for p in family_of(base):
+        m = VARIANT_RE.search(p.name)
+        docs.append({"name": p.name, "label": doc_label(p, base), "title": doc_title(p),
+                     "suffix": f"(variant {m.group(1)})" if m else "",
+                     "current": p.name == current, "pending": False})
     names = {d["name"] for d in docs}
     for name, job in (jobs or {}).items():
         if name not in names and job.status != "done":
             docs.append({"name": name, "label": f"Variant {job.n} (generating…)",
+                         "title": f"Variant {job.n}", "suffix": "(generating…)",
                          "current": name == current, "pending": True})
     return docs
 
