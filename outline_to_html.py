@@ -1061,6 +1061,15 @@ PAGE = """<!DOCTYPE html>
     fitMargin();
     navBtn.setAttribute('aria-expanded', String(open));
     if (remember) try {{ localStorage.setItem(NAV_KEY, open ? 'open' : 'closed'); }} catch {{}}
+    if (open) scrollNavToHere();
+  }}
+  // the open document's root must be in view: scroll the navigator to it
+  // when it sits below (or above) the fold — on load and when the panel opens
+  function scrollNavToHere() {{
+    const here = navTree.querySelector(':scope > li.here');
+    if (!here || !document.body.classList.contains('nav-open')) return;
+    const r = here.getBoundingClientRect(), n = nav.getBoundingClientRect();
+    if (r.top < n.top || r.bottom > n.bottom) here.scrollIntoView({{ block: 'start' }});
   }}
   navBtn.addEventListener('click', () =>
     setNav(!document.body.classList.contains('nav-open'), !narrowNav.matches));
@@ -1072,6 +1081,7 @@ PAGE = """<!DOCTYPE html>
     let stored = null;
     try {{ stored = localStorage.getItem(NAV_KEY); }} catch {{}}
     setNav(!narrowNav.matches && stored !== 'closed', false);
+    requestAnimationFrame(scrollNavToHere);     // after the first render has laid the trees out
   }}
   // the sidebar starts under the sticky header, whose height wraps with the title
   {{
