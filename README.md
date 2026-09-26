@@ -30,6 +30,17 @@ back to the `.md` only when you press **Save**.
   when you remove it; when the margin is too narrow (sidebar open, small
   window) it sits at the end of the row instead. Display only — nothing is
   written to the file.
+- **Console** — a devtools-style activity log docked as a slim
+  bar at the bottom of the page — **minimised by default**, showing the
+  latest entry and error/warning counts; click it (or Ctrl+`) to open a
+  resizable drawer, like Chrome's devtools console. It lists every request
+  the page makes (method, path, status, time, payload summary), every
+  server-side event (page builds, model calls with backend/command/usage and
+  the full prompt, saves with the files written, conflicts, failures —
+  pulled from `GET /log`, so they survive the reload after Save), every
+  toast notice, and every uncaught page error. Click an entry for its
+  details; filter by Network / Server / UI / Errors; Copy and Clear. The
+  open state lasts for the tab, the height is remembered. Serve mode only.
 - **Navigator** — a left sidebar (toggle: panel icon, top left) listing the
   outline as a tree that **descends with the level switch**, like walking
   down a directory: in mode N every node above level N is expanded and the
