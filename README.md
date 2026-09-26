@@ -25,8 +25,9 @@ back to the `.md` only when you press **Save**.
 
 - **Collapsible tree** — carets on branch bullets, plus a **level switch**
   centred at the bottom of the header with one mode per **heading level**
-  the outline uses, then one for the paragraphs, then one for the written
-  text: `2` shows `#` and `##` headings, `3` adds the `###` headings, `4`
+  the outline uses (icon: that many bulleted, stepped-in bars), then one for the
+  paragraphs (¶), then one for the written text (lines of prose): `2`
+  shows `#` and `##` headings, `3` adds the `###` headings, `4`
   the paragraphs (topic sentences), and the highest number the fully
   written paragraphs — the text nested under each paragraph bullet. A
   non-heading bullet under a heading is a paragraph, a non-heading bullet

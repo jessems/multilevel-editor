@@ -68,8 +68,9 @@ warning. Save serializes the whole outline from the page and rewrites the
   (the tree rebuilds, chips recompute) or Save directly. Only the outline body
   is shown; frontmatter stays untouched.
 - **Collapse/expand** via the caret on branch bullets; the **level switch**
-  centred at the bottom of the header has one mode per heading level, then
-  the paragraph level, then the written-text level (`2` = `#`/`##` headings,
+  centred at the bottom of the header has one icon button per heading level
+  (n bulleted, stepped-in bars), then
+  the paragraph level (¶), then the written-text level (prose lines) (`2` = `#`/`##` headings,
   `3` = plus `###`, `4` = paragraphs, `5` = fully written paragraphs — the
   bullets nested under each paragraph; `1` omitted for a lone title). Bullets below the
   chosen level are removed from view, not collapsed (branches with all
