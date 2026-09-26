@@ -165,9 +165,10 @@ back to the `.md` only when you press **Save**.
   the original**, `<outline>.variant-N.md`, with frontmatter recording what
   it derives from and the instruction used. The original is untouched.
   Each variant is a skeleton in its own right, with its own `.draft.md` and
-  `.tags.yaml`. The **navigator's top level is the file family**: the
-  skeleton and its variants; the open one expands onto its outline, the
-  others are links (`?doc=<name>`) that load them. Serve mode only; needs
+  `.tags.yaml`. In the **navigator** the family shares the
+  outline's top level: this document's title row carries a suffix such as
+  "(variant 1)", and the other members sit beside it as links (`?doc=<name>`)
+  labelled by their own titles. Serve mode only; needs
   the same model backend as the quill; unsaved edits must be saved first.
 - **Nesting rules** — under a paragraph only its written text may nest (a
   childless non-heading bullet); drops never land inside a paragraph; and a

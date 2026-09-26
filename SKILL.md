@@ -80,8 +80,9 @@ warning. Save serializes the whole outline from the page and rewrites the
   done the file `<outline>.variant-N.md` exists (frontmatter: summary,
   variant_of, variant, title, prompt, created, status: draft) and the page
   reloads onto it; a failure shows the error with a link back. Variants are full skeletons with their own draft and tags.
-  The navigator's top level lists the family (base + variants); the open file
-  expands onto its outline. Start the server on the base skeleton; it serves
+  In the navigator the family shares the outline's top level: the open
+  document's title row carries a "(variant N)" suffix, the others are
+  sibling links labelled by their own titles. Start the server on the base skeleton; it serves
   the family and refuses any other path. Unsaved edits block generation.
 - **Drag to move**: a grip (`⋮⋮`) appears left of a bullet on hover; dragging
   it moves the bullet **with its whole subtree** (indicator line shows the
