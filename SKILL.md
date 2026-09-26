@@ -83,7 +83,9 @@ warning. Save serializes the whole outline from the page and rewrites the
   In the navigator the family shares the outline's top level: every member
   is drawn as a full tree (the others' outlines travel with the page as
   `bullets`), the open one tinted, variants suffixed "(variant N)"; a node
-  of another member opens it at that node (`?doc=<name>&at=<index>`). Start the server on the base skeleton; it serves
+  of another member opens it at that node (`?doc=<name>&at=<index>`). A
+  tab strip above the outline (`#docTabs`: Original / Variant N, ‹ ›)
+  switches members at any level, carrying `?level=`. Start the server on the base skeleton; it serves
   the family and refuses any other path. Unsaved edits block generation.
 - **Drag to move**: a grip (`⋮⋮`) appears left of a bullet on hover; dragging
   it moves the bullet **with its whole subtree** (indicator line shows the

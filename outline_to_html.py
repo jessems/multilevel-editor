@@ -614,24 +614,46 @@ PAGE = """<!DOCTYPE html>
   @keyframes genfade {{ from {{ opacity:0; transform:translateY(3px); }} to {{ opacity:1; transform:none; }} }}
   body.generating li.fresh > .row {{ animation:genfade .35s ease-out both; }}
   body.generating .txt.h1.placeholder-title {{ color:var(--mut); animation:genpulse 1.6s ease-in-out infinite; }}
-  body.generating #levels, body.generating .main-tools {{ display:none; }}
+  body.generating #levels, body.generating #variantBtn {{ display:none; }}
+  body.generating .main-tools {{ display:flex; }}               /* the tabs stay: this variant's tab is active */
 
   /* ---------- main tools (top right of the reading column) + variant dialog ---------- */
-  .main-tools {{ display:flex; justify-content:flex-end; margin:-6px 0 16px; }}
+  .main-tools {{ display:flex; justify-content:space-between; align-items:center; gap:12px; margin:-6px 0 16px; }}
+  #variantBtn {{ margin-left:auto; }}
+  /* document tabs: the skeleton and its variants as a strip above the outline —
+     the same quiet segmented control as a bullet's version tabs, led by the
+     branch glyph; ‹ › step through the family, the active tab is this document */
+  .dtabs {{ display:flex; align-items:center; gap:1px; flex-wrap:wrap; max-width:100%;
+           padding:1px 2px 1px 7px; background:color-mix(in srgb, var(--acc) 6%, var(--bg));
+           border:1px solid color-mix(in srgb, var(--acc) 25%, var(--line)); border-radius:8px;
+           font:500 11.5px/1 var(--sans); }}
+  .dtabs:empty {{ display:none; }}
+  .dtabs::before {{ content:''; flex:0 0 11px; height:11px; margin-right:3px; background:var(--acc); opacity:.8;
+    -webkit-mask:var(--icon) center/contain no-repeat; mask:var(--icon) center/contain no-repeat;
+    --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 3v12'/%3E%3Ccircle cx='18' cy='6' r='3'/%3E%3Ccircle cx='6' cy='18' r='3'/%3E%3Cpath d='M18 9a9 9 0 0 1-9 9'/%3E%3C/svg%3E"); }}
+  .dtabs button {{ border:none; background:none; color:var(--mut); cursor:pointer;
+                  font:inherit; height:21px; padding:0 8px; border-radius:6px; }}
+  .dtabs button:hover {{ color:var(--ink); background:var(--hover); }}
+  .dtabs button.on {{ background:var(--chip); color:var(--acc); font-weight:600; }}
+  .dtabs button.pending {{ font-style:italic; }}
+  .dtabs .dnav {{ padding:0 6px; font-size:13px; }}
+  .dtabs .dnav:disabled {{ opacity:.3; cursor:default; background:none; }}
   /* the primary action of the top level: an accent pill with a branch icon,
      in the header's sans face — the same voice as the armed Save button */
-  .main-tools button {{ display:inline-flex; align-items:center; gap:7px; cursor:pointer;
+  #variantBtn {{ display:inline-flex; align-items:center; gap:7px; cursor:pointer;
                         font:600 12.5px/1 var(--sans); letter-spacing:.01em; padding:8px 14px 8px 12px;
                         color:var(--bg); background:var(--acc); border:1px solid var(--acc); border-radius:999px;
                         box-shadow:0 1px 2px rgba(0,0,0,.10);
                         transition:transform .08s ease, box-shadow .12s ease, filter .12s ease; }}
-  .main-tools button::before {{ content:''; display:inline-block; width:14px; height:14px; background:currentColor;
+  #variantBtn::before {{ content:''; display:inline-block; width:14px; height:14px; background:currentColor;
     -webkit-mask:var(--icon) center/contain no-repeat; mask:var(--icon) center/contain no-repeat;
     --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 3v12'/%3E%3Ccircle cx='18' cy='6' r='3'/%3E%3Ccircle cx='6' cy='18' r='3'/%3E%3Cpath d='M18 9a9 9 0 0 1-9 9'/%3E%3C/svg%3E"); }}
-  .main-tools button:hover {{ filter:brightness(1.07); box-shadow:0 3px 8px rgba(0,0,0,.16); transform:translateY(-1px); }}
-  .main-tools button:active {{ transform:none; box-shadow:0 1px 2px rgba(0,0,0,.10); filter:none; }}
-  .main-tools button:focus-visible {{ outline:2px solid var(--acc); outline-offset:3px; }}
-  body:not(.toplevel) .main-tools, body.readonly .main-tools, body.mdmode .main-tools {{ display:none; }}
+  #variantBtn:hover {{ filter:brightness(1.07); box-shadow:0 3px 8px rgba(0,0,0,.16); transform:translateY(-1px); }}
+  #variantBtn:active {{ transform:none; box-shadow:0 1px 2px rgba(0,0,0,.10); filter:none; }}
+  #variantBtn:focus-visible {{ outline:2px solid var(--acc); outline-offset:3px; }}
+  body:not(.toplevel) #variantBtn {{ display:none; }}            /* the button lives on the top level only… */
+  body:not(.toplevel):not(.has-tabs) .main-tools,               /* …the tabs on every level */
+  body.readonly .main-tools, body.mdmode .main-tools {{ display:none; }}
   #variantDlg {{ border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink);
                  padding:20px 22px 18px; width:min(560px, 92vw); box-sizing:border-box;
                  font:14px/1.5 var(--sans); box-shadow:0 18px 50px rgba(0,0,0,.25); }}
@@ -754,7 +776,10 @@ PAGE = """<!DOCTYPE html>
   <div class="gen-bar"><span></span></div>
   <div id="genErr" class="gen-err" hidden></div>
 </div>
-<div class="main-tools"><button id="variantBtn" type="button" title="generate a variant of this skeleton as a new file">New skeleton variant</button></div>
+<div class="main-tools">
+  <div class="dtabs" id="docTabs" role="tablist" aria-label="the skeleton and its variants"></div>
+  <button id="variantBtn" type="button" title="generate a variant of this skeleton as a new file">New skeleton variant</button>
+</div>
 <ul id="tree">{tree}</ul>
 <textarea id="mdview" spellcheck="false"></textarea>
 </main>
@@ -1599,6 +1624,33 @@ PAGE = """<!DOCTYPE html>
     }};
     tree.querySelector('.txt.h1')?.classList.add('placeholder-title');
     poll();
+  }}
+
+  // ---- document tabs: step through the skeleton and its variants ----
+  {{
+    const strip = document.getElementById('docTabs');
+    const at = DOCS.findIndex(d => d.current);
+    if (DOCS.length > 1) {{
+      const go = d => {{ location.href = '?doc=' + encodeURIComponent(d.name) + '&level=' + activeLevel; }};
+      const tabLabel = d => {{
+        const m = /\\.variant-(\\d+)\\.md$/.exec(d.name);
+        return d.pending ? d.title + '…' : m ? 'Variant ' + m[1] : 'Original';
+      }};
+      const b = (cls, label, title, extra = '') =>
+        '<button type="button" class="' + cls + '" title="' + esc(title) + '"' + extra + '>' + esc(label) + '</button>';
+      strip.innerHTML =
+        b('dnav', '‹', 'previous', at <= 0 ? ' disabled' : '') +
+        DOCS.map((d, i) => b('dtab' + (d.current ? ' on' : '') + (d.pending ? ' pending' : ''), tabLabel(d), d.title,
+                             ' role="tab" data-i="' + i + '" aria-selected="' + !!d.current + '"')).join('') +
+        b('dnav', '›', 'next', at >= DOCS.length - 1 ? ' disabled' : '');
+      strip.addEventListener('click', e => {{
+        const t = e.target.closest('button');
+        if (!t || t.disabled) return;
+        if (t.classList.contains('dnav')) go(DOCS[at + (t.textContent === '‹' ? -1 : 1)]);
+        else if (!t.classList.contains('on')) go(DOCS[+t.dataset.i]);
+      }});
+      document.body.classList.add('has-tabs');
+    }}
   }}
 
   // ---- skeleton variant: instruction dialog → /variant → open the new file ----

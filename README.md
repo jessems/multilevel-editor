@@ -168,7 +168,10 @@ back to the `.md` only when you press **Save**.
   `.tags.yaml`. In the **navigator** the family shares the
   outline's top level: every member is drawn as a full tree that follows the
   level switch, the open one tinted, variants suffixed "(variant 1)".
-  Clicking a node in another member opens it there (`?doc=<name>&at=<n>`). The level switch is sized by the whole
+  Clicking a node in another member opens it there (`?doc=<name>&at=<n>`).
+  Above the outline a **tab strip** — Original, Variant 1, Variant 2 …, with
+  ‹ › to step — switches between the members at every level, keeping the
+  level you are on; a variant being written shows as an italic tab. The level switch is sized by the whole
   family, so a variant that so far holds only headings still offers the
   base's modes. Serve mode only; needs
   the same model backend as the quill; unsaved edits must be saved first.
