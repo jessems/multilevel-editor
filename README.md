@@ -30,17 +30,16 @@ back to the `.md` only when you press **Save**.
   when you remove it; when the margin is too narrow (sidebar open, small
   window) it sits at the end of the row instead. Display only — nothing is
   written to the file.
-- **Console** — a devtools-style activity log docked as a slim
-  bar at the bottom of the page — **minimised by default**, showing the
-  latest entry and error/warning counts; click it (or Ctrl+`) to open a
-  resizable drawer, like Chrome's devtools console. It lists every request
-  the page makes (method, path, status, time, payload summary), every
-  server-side event (page builds, model calls with backend/command/usage and
-  the full prompt, saves with the files written, conflicts, failures —
-  pulled from `GET /log`, so they survive the reload after Save), every
-  toast notice, and every uncaught page error. Click an entry for its
-  details; filter by Network / Server / UI / Errors; Copy and Clear. The
-  open state lasts for the tab, the height is remembered. Serve mode only.
+- **Console** — an activity log docked at the bottom like a browser's devtools
+  drawer — **minimised by default** to a one-line bar showing the latest
+  entry (plus a count of problems); click it or press Ctrl+` to open a
+  resizable panel. One list, two kinds of entry: **App** — what you did in
+  the editor (edit with before/after, insert, move, indent/outdent, delete,
+  tag, undo/redo, level switch, Markdown view, navigator jump, settings,
+  save and the files written, refused actions) — and **AI** — each quill
+  request and its reply, with model, backend, command, timing and the full
+  prompt behind a click. Copy and Clear; the log survives the reload after
+  Save and the open state lasts for the tab. Serve mode only.
 - **Navigator** — a left sidebar (toggle: panel icon, top left) listing the
   outline as a tree that **descends with the level switch**, like walking
   down a directory: in mode N every node above level N is expanded and the

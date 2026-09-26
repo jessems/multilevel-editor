@@ -39,12 +39,10 @@ import re
 import shutil
 import subprocess
 import sys
-import threading
 import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
 
 BULLET_RE = re.compile(r"^(\s*)- (.*)$")
 # Paragraph role tags live in a sidecar metadata document, NOT in the outline:
@@ -638,12 +636,13 @@ PAGE = """<!DOCTYPE html>
   #console.open {{ box-shadow:0 -8px 24px -16px rgba(0,0,0,.35); }}
   .con-grab {{ position:absolute; left:0; right:0; top:-4px; height:8px; cursor:ns-resize; display:none; }}
   #console.open .con-grab {{ display:block; }}
-  .con-bar {{ flex:0 0 27px; display:flex; align-items:center; gap:10px; padding:0 10px 0 8px;
-             font:500 11.5px/1 var(--sans); color:var(--mut); cursor:pointer; user-select:none;
-             border:none; background:none; width:100%; text-align:left; box-sizing:border-box; }}
-  .con-bar:hover {{ color:var(--ink); background:var(--hover); }}
-  .con-bar:focus-visible {{ outline:2px solid var(--acc); outline-offset:-2px; }}
+  .con-bar {{ flex:0 0 27px; display:flex; align-items:stretch; }}
   #console.open .con-bar {{ border-bottom:1px solid var(--line); }}
+  .con-toggle {{ flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:10px; padding:0 10px 0 8px;
+                font:500 11.5px/1 var(--sans); color:var(--mut); cursor:pointer; user-select:none;
+                border:none; background:none; text-align:left; }}
+  .con-toggle:hover {{ color:var(--ink); background:var(--hover); }}
+  .con-toggle:focus-visible {{ outline:2px solid var(--acc); outline-offset:-2px; }}
   .con-chev {{ flex:0 0 auto; width:0; height:0; border-left:4px solid transparent;
               border-right:4px solid transparent; border-bottom:5px solid currentColor;
               transition:transform .12s; }}
@@ -654,28 +653,25 @@ PAGE = """<!DOCTYPE html>
   #console.open .con-last {{ visibility:hidden; }}
   .con-last.err {{ color:var(--err); opacity:1; }}
   .con-count {{ flex:0 0 auto; display:none; align-items:center; gap:4px; font:600 11px/1 var(--sans);
-               font-variant-numeric:tabular-nums; }}
+               font-variant-numeric:tabular-nums; color:var(--err); }}
   .con-count.on {{ display:inline-flex; }}
   .con-count::before {{ content:''; width:7px; height:7px; border-radius:50%; background:currentColor; }}
-  .con-count.err {{ color:var(--err); }}
-  .con-count.warn {{ color:var(--t2); }}
-  .con-tools {{ flex:0 0 auto; display:none; align-items:center; gap:2px; padding:4px 8px;
-               border-bottom:1px solid var(--line); font:500 11.5px/1 var(--sans); }}
+  .con-tools {{ flex:0 0 auto; display:none; align-items:center; gap:2px; padding:0 8px;
+               font:500 11.5px/1 var(--sans); }}
   #console.open .con-tools {{ display:flex; }}
   .con-tools button {{ font:inherit; color:var(--mut); background:none; border:1px solid transparent;
                       border-radius:5px; padding:4px 8px; cursor:pointer; }}
   .con-tools button:hover {{ background:var(--hover); color:var(--ink); }}
-  .con-tools button.on {{ background:var(--chip); color:var(--ink); }}
-  .con-tools .grow {{ flex:1 1 auto; }}
   #conList {{ flex:1 1 auto; overflow-y:auto; margin:0; padding:0; list-style:none; border:none; display:none; }}
   #console.open #conList {{ display:block; }}
   #conList li {{ border-bottom:1px solid color-mix(in srgb, var(--line) 60%, transparent); }}
-  .ce {{ display:grid; grid-template-columns:86px 58px minmax(0,1fr) auto; gap:10px;
+  .ce {{ display:grid; grid-template-columns:64px 34px minmax(0,1fr) auto; gap:10px;
         padding:3px 10px; cursor:default; }}
   .ce.has-detail {{ cursor:pointer; }}
   .ce.has-detail:hover {{ background:var(--hover); }}
   .ce-t {{ color:var(--mut); font-variant-numeric:tabular-nums; }}
   .ce-k {{ color:var(--mut); font:600 10px/1.9 var(--sans); letter-spacing:.06em; text-transform:uppercase; }}
+  .ce-k.k-ai {{ color:var(--t1); }}
   .ce-m {{ overflow-wrap:anywhere; }}
   .ce.has-detail .ce-m::before {{ content:'▸ '; color:var(--mut); }}
   li.expanded .ce.has-detail .ce-m::before {{ content:'▾ '; }}
@@ -684,7 +680,7 @@ PAGE = """<!DOCTYPE html>
   #conList li.error .ce-m, #conList li.error .ce-k {{ color:var(--err); }}
   #conList li.warn {{ background:color-mix(in srgb, var(--t2) 9%, transparent); }}
   #conList li.warn .ce-m {{ color:var(--t2); }}
-  .ce-detail {{ display:none; margin:0 10px 6px 164px; padding:6px 10px; max-height:320px; overflow:auto;
+  .ce-detail {{ display:none; margin:0 10px 6px 118px; padding:6px 10px; max-height:320px; overflow:auto;
                background:var(--codebg); border-radius:5px; white-space:pre-wrap; overflow-wrap:anywhere;
                font:11.5px/1.5 var(--mono); }}
   li.expanded .ce-detail {{ display:block; }}
@@ -746,20 +742,16 @@ PAGE = """<!DOCTYPE html>
 <div id="insertHint"><button class="plus" type="button" title="insert bullet" aria-label="insert bullet">+</button></div>
 <section id="console" aria-label="console">
   <div class="con-grab" title="drag to resize"></div>
-  <button class="con-bar" type="button" aria-controls="conList" aria-expanded="false" title="console (Ctrl+`)">
-    <span class="con-chev"></span><span class="con-title">Console</span>
-    <span class="con-last"></span>
-    <span class="con-count err" title="errors"></span><span class="con-count warn" title="warnings"></span>
-  </button>
-  <div class="con-tools" role="toolbar" aria-label="console filter">
-    <button type="button" data-f="all" class="on">All</button>
-    <button type="button" data-f="net">Network</button>
-    <button type="button" data-f="server">Server</button>
-    <button type="button" data-f="ui">UI</button>
-    <button type="button" data-f="error">Errors</button>
-    <span class="grow"></span>
-    <button type="button" id="conCopy" title="copy the visible entries as text">Copy</button>
-    <button type="button" id="conClear" title="clear the console">Clear</button>
+  <div class="con-bar">
+    <button class="con-toggle" type="button" aria-controls="conList" aria-expanded="false" title="console (Ctrl+`)">
+      <span class="con-chev"></span><span class="con-title">Console</span>
+      <span class="con-last"></span>
+      <span class="con-count" title="problems"></span>
+    </button>
+    <span class="con-tools">
+      <button type="button" id="conCopy" title="copy the log as text">Copy</button>
+      <button type="button" id="conClear" title="clear the log">Clear</button>
+    </span>
   </div>
   <ul id="conList" role="log" aria-live="off"></ul>
 </section>
@@ -898,7 +890,10 @@ PAGE = """<!DOCTYPE html>
       item.classList.toggle('open', open);
       navOverride.set(item.navLi, open);
       if (open) item.querySelectorAll(':scope > ul > li.deep').forEach(k => k.classList.remove('deep'));
-    }} else if (e.target.closest('.nlabel')) revealBullet(item.navLi);
+    }} else if (e.target.closest('.nlabel')) {{
+      conLog('app', 'info', 'jumped to ' + conName(item.navLi));
+      revealBullet(item.navLi);
+    }}
   }});
   // open beside the text on wide screens (remembered), as an overlay on narrow ones
   const NAV_KEY = 'multilevel-editor.nav';
@@ -1025,7 +1020,7 @@ PAGE = """<!DOCTYPE html>
   }}
   levelBar.addEventListener('click', e => {{
     const b = e.target.closest('button');
-    if (b) showLevels(+b.dataset.level);
+    if (b) {{ showLevels(+b.dataset.level); conLog('app', 'info', 'view: ' + b.title); }}
   }});
   {{
     let stored = null;
@@ -1034,58 +1029,55 @@ PAGE = """<!DOCTYPE html>
     else if (parseInt(stored, 10) > 0) showLevels(parseInt(stored, 10), false);
     else syncLevels();
   }}
-  // ---- console: a devtools-style activity log docked at the bottom ----
-  // Lists every request the page makes (method, path, status, time, payload
-  // summary), every server-side event (pulled from GET /log, so the server's
-  // record of a Save survives the reload that follows it), every notice shown
-  // in the toast, and every uncaught page error. Page-side entries live in
-  // sessionStorage, so the post-save reload keeps them and a new tab starts
-  // fresh. Minimised by default; opening lasts for the tab, the height is
-  // remembered. Ctrl+` toggles it, Esc inside it minimises it.
+  // ---- console: an activity log docked at the bottom, like a devtools drawer ----
+  // One list of what happened in this session: the edits made in the app
+  // (edit, insert, move, indent, delete, tag, undo/redo, level and view
+  // switches, save) and the conversations with the AI (the quill: what was
+  // asked, of which model and backend, what came back and how long it took —
+  // click an entry for the prompt and the reply). Entries live in
+  // sessionStorage, so the reload after Save keeps them and a new tab starts
+  // fresh. Minimised by default to a one-line bar; opening lasts for the tab,
+  // the height is remembered. Ctrl+` toggles it, Esc inside it minimises it.
   const conEl = document.getElementById('console');
   const conList = document.getElementById('conList');
-  const conBar = conEl.querySelector('.con-bar');
+  const conBar = conEl.querySelector('.con-toggle');
   const conLast = conEl.querySelector('.con-last');
-  const conErr = conEl.querySelector('.con-count.err'), conWarn = conEl.querySelector('.con-count.warn');
+  const conErr = conEl.querySelector('.con-count');
   const CON_KEY = 'multilevel-editor.console:' + SOURCE;
   const CON_OPEN_KEY = 'multilevel-editor.console-open';
   const CON_H_KEY = 'multilevel-editor.console-height';
   const CON_BAR = 28, CON_MAX = 500;
-  let conEntries = [];            // {{id, t, src: page|server, kind, level, msg, detail?, ms?}}
-  let conCleared = 0;             // Clear hides everything logged at or before this time
-  let conFilter = 'all';
-  let conBoot = null, conSeq = 0; // server log position (boot id changes when the server restarts)
-  let conOffline = false, conPollTimer = null;
+  let conEntries = [];            // {{id, t, kind: app|ai, level, msg, detail?, ms?}}
   const conExpanded = new Set();
-  try {{
-    const s = JSON.parse(sessionStorage.getItem(CON_KEY) || '{{}}');
-    conEntries = s.entries || []; conCleared = s.cleared || 0;
-  }} catch {{}}
-  function conPersist() {{
-    try {{ sessionStorage.setItem(CON_KEY, JSON.stringify({{ cleared: conCleared,
-      entries: conEntries.filter(e => e.src === 'page' && e.t > conCleared).slice(-CON_MAX) }})); }} catch {{}}
-  }}
+  try {{ conEntries = JSON.parse(sessionStorage.getItem(CON_KEY) || '[]'); }} catch {{}}
+  if (!Array.isArray(conEntries)) conEntries = [];
   function conLog(kind, level, msg, detail, ms) {{
-    const e = {{ id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
-                t: Date.now(), src: 'page', kind, level: level || 'info', msg: String(msg) }};
+    const e = {{ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+                t: Date.now(), kind, level: level || 'info', msg: String(msg) }};
     if (detail !== undefined && detail !== null && detail !== '') e.detail = detail;
     if (ms !== undefined) e.ms = ms;
-    conAdd([e]); conPersist();
+    conEntries = conEntries.concat(e).slice(-CON_MAX);
+    try {{ sessionStorage.setItem(CON_KEY, JSON.stringify(conEntries)); }} catch {{}}
+    conRender();
     return e;
   }}
-  function conAdd(list) {{
-    conEntries.push(...list);
-    conEntries.sort((a, b) => a.t - b.t);
-    if (conEntries.length > CON_MAX * 2) conEntries = conEntries.slice(-CON_MAX * 2);
-    conRender();
+  // how a bullet is named in the log: its paragraph number (if any) and the start of its text
+  function conName(li) {{
+    if (!li) return 'the top level';
+    const t = li.querySelector(':scope > .row .txt');
+    const raw = t ? t.dataset.raw.replace(/^#{{1,6}}\\s+/, '') : '';
+    const num = li.querySelector(':scope > .row > .main > .pnum');
+    const cut = raw.length > 48 ? raw.slice(0, 48) + '…' : raw;
+    const quoted = /^["“'‘]/.test(cut) ? cut : '“' + (cut || '…') + '”';   // no doubled quotes
+    return (num ? '¶' + num.textContent + ' ' : '') + quoted;
   }}
   const pad = (n, w) => String(n).padStart(w, '0');
   const conTime = t => {{ const d = new Date(t);
-    return pad(d.getHours(), 2) + ':' + pad(d.getMinutes(), 2) + ':' + pad(d.getSeconds(), 2) + '.' + pad(d.getMilliseconds(), 3); }};
-  const conMs = ms => ms >= 1000 ? (ms / 1000).toFixed(2) + ' s' : Math.round(ms) + ' ms';
-  const conShown = () => conEntries.filter(e => e.t > conCleared);
-  const conPasses = e => conFilter === 'all' ||
-    (conFilter === 'error' ? e.level === 'error' || e.level === 'warn' : e.kind === conFilter);
+    return pad(d.getHours(), 2) + ':' + pad(d.getMinutes(), 2) + ':' + pad(d.getSeconds(), 2); }};
+  const conMs = ms => ms >= 1000 ? (ms / 1000).toFixed(1) + ' s' : Math.round(ms) + ' ms';
+  const conText = d => typeof d === 'string' ? d : Object.entries(d).map(([k, v]) =>
+    k + ':' + (typeof v === 'string' && v.includes('\\n') ? '\\n' + v.replace(/^/gm, '  ')
+               : ' ' + (typeof v === 'string' ? v : JSON.stringify(v)))).join('\\n');
   function conItem(e) {{
     const li = document.createElement('li');
     li.className = e.level;
@@ -1094,88 +1086,33 @@ PAGE = """<!DOCTYPE html>
     const row = document.createElement('div');
     row.className = 'ce' + (e.detail !== undefined ? ' has-detail' : '');
     const cell = (cls, text) => {{ const s = document.createElement('span'); s.className = cls; s.textContent = text; return s; }};
-    row.append(cell('ce-t', conTime(e.t)), cell('ce-k', e.kind), cell('ce-m', e.msg),
-               cell('ce-d', e.ms !== undefined ? conMs(e.ms) : ''));
+    row.append(cell('ce-t', conTime(e.t)), cell('ce-k k-' + e.kind, e.kind === 'ai' ? 'AI' : 'App'),
+               cell('ce-m', e.msg), cell('ce-d', e.ms !== undefined ? conMs(e.ms) : ''));
     li.append(row);
     if (e.detail !== undefined) {{
       const pre = document.createElement('pre');
       pre.className = 'ce-detail';
-      pre.textContent = typeof e.detail === 'string' ? e.detail : JSON.stringify(e.detail, null, 2);
+      pre.textContent = conText(e.detail);
       li.append(pre);
     }}
     return li;
   }}
   function conRender() {{
-    const shown = conShown();
-    const errs = shown.filter(e => e.level === 'error').length, warns = shown.filter(e => e.level === 'warn').length;
+    const errs = conEntries.filter(e => e.level === 'error' || e.level === 'warn').length;
     conErr.textContent = errs; conErr.classList.toggle('on', errs > 0);
-    conWarn.textContent = warns; conWarn.classList.toggle('on', warns > 0);
-    const last = shown[shown.length - 1];
-    conLast.textContent = last ? conTime(last.t) + '  ' + last.msg : 'no activity yet';
-    conLast.classList.toggle('err', !!last && last.level === 'error');
+    const last = conEntries[conEntries.length - 1];
+    conLast.textContent = last ? conTime(last.t) + '  ' + (last.kind === 'ai' ? 'AI · ' : '') + last.msg : 'no activity yet';
+    conLast.classList.toggle('err', !!last && last.level !== 'info');
     if (!conEl.classList.contains('open')) return;
     const atBottom = conList.scrollHeight - conList.scrollTop - conList.clientHeight < 24;
-    const vis = shown.filter(conPasses);
-    conList.replaceChildren(...vis.map(conItem));
-    if (!vis.length) {{
+    conList.replaceChildren(...conEntries.map(conItem));
+    if (!conEntries.length) {{
       const li = document.createElement('li');
       li.className = 'con-empty';
-      li.textContent = conFilter === 'all' ? 'nothing logged yet' : 'nothing logged for this filter';
+      li.textContent = 'nothing yet — edits and AI requests will appear here';
       conList.append(li);
     }}
     if (atBottom) conList.scrollTop = conList.scrollHeight;
-  }}
-  // payloads are summarised for the log: long strings cut, long lists counted
-  function conBrief(v, depth = 0) {{
-    if (typeof v === 'string') return v.length > 300 ? v.slice(0, 300) + '… (' + v.length + ' chars)' : v;
-    if (Array.isArray(v)) return v.length > 12 ? '[' + v.length + ' items]' : v.map(x => conBrief(x, depth + 1));
-    if (v && typeof v === 'object') {{
-      if (depth > 2) return '{{…}}';
-      const o = {{}};
-      for (const [k, x] of Object.entries(v)) o[k] = conBrief(x, depth + 1);
-      return o;
-    }}
-    return v;
-  }}
-  const conParse = s => {{ try {{ return JSON.parse(s); }} catch {{ return s; }} }};
-  // fetch that logs itself as a Network entry, then pulls the server's side of it
-  async function apiFetch(path, opts = {{}}) {{
-    const method = (opts.method || 'GET').toUpperCase();
-    const t0 = performance.now();
-    const detail = {{ request_bytes: opts.body ? new Blob([opts.body]).size : 0 }};
-    if (opts.body) detail.request = conBrief(conParse(opts.body));
-    let r;
-    try {{ r = await fetch(path, opts); }}
-    catch (err) {{
-      conLog('net', 'error', method + ' ' + path + ' — failed: ' + err.message, detail, performance.now() - t0);
-      throw err;
-    }}
-    const text = await r.clone().text();
-    const ms = performance.now() - t0;
-    detail.status = r.status + ' ' + r.statusText;
-    detail.response_bytes = new Blob([text]).size;
-    detail.response = conBrief(conParse(text));
-    conLog('net', r.ok ? 'info' : 'error', method + ' ' + path + ' → ' + r.status, detail, ms);
-    conPull();
-    return r;
-  }}
-  async function conPull() {{
-    if (!EDITABLE) return;
-    try {{
-      const r = await fetch('/log?after=' + conSeq);   // plain fetch: pulling the log is not itself logged
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      const data = await r.json();
-      if (conBoot && data.boot !== conBoot) {{ conBoot = data.boot; conSeq = 0; return conPull(); }}   // server restarted
-      conBoot = data.boot;
-      const fresh = (data.entries || []).filter(e => e.seq > conSeq)
-        .map(e => Object.assign(e, {{ id: 's' + data.boot + ':' + e.seq, src: 'server', kind: 'server' }}));
-      if (fresh.length) {{ conSeq = Math.max(...fresh.map(e => e.seq)); conAdd(fresh); }}
-      if (conOffline) conLog('net', 'info', 'server reachable again');
-      conOffline = false;
-    }} catch (err) {{
-      if (!conOffline) conLog('net', 'error', 'server unreachable — GET /log failed: ' + err.message);
-      conOffline = true;
-    }}
   }}
   const conHeight = () => {{
     let h = 260;
@@ -1187,13 +1124,7 @@ PAGE = """<!DOCTYPE html>
     conBar.setAttribute('aria-expanded', String(open));
     document.documentElement.style.setProperty('--con-h', (open ? conHeight() : CON_BAR) + 'px');
     if (remember) try {{ sessionStorage.setItem(CON_OPEN_KEY, open ? '1' : ''); }} catch {{}}
-    clearInterval(conPollTimer);
-    if (open) {{
-      conRender();
-      conList.scrollTop = conList.scrollHeight;
-      conPull();
-      conPollTimer = setInterval(conPull, 4000);   // pick up server events from other tabs, notice a dead server
-    }}
+    if (open) {{ conRender(); conList.scrollTop = conList.scrollHeight; }}
   }}
   conBar.addEventListener('click', () => conOpen(!conEl.classList.contains('open')));
   document.addEventListener('keydown', e => {{
@@ -1208,24 +1139,15 @@ PAGE = """<!DOCTYPE html>
     li.classList.toggle('expanded');
     if (li.classList.contains('expanded')) conExpanded.add(li.dataset.id); else conExpanded.delete(li.dataset.id);
   }});
-  conEl.querySelector('.con-tools').addEventListener('click', e => {{
-    const b = e.target.closest('button[data-f]');
-    if (!b) return;
-    conFilter = b.dataset.f;
-    conEl.querySelectorAll('.con-tools button[data-f]').forEach(x => x.classList.toggle('on', x === b));
-    conRender();
-    conList.scrollTop = conList.scrollHeight;
-  }});
   document.getElementById('conClear').addEventListener('click', () => {{
-    conCleared = Date.now(); conExpanded.clear();
-    conEntries = conEntries.filter(e => e.t > conCleared);
-    conPersist(); conRender();
+    conEntries = []; conExpanded.clear();
+    try {{ sessionStorage.removeItem(CON_KEY); }} catch {{}}
+    conRender();
   }});
   document.getElementById('conCopy').addEventListener('click', async () => {{
-    const lines = conShown().filter(conPasses).map(e =>
-      conTime(e.t) + '  ' + e.kind.padEnd(6) + '  ' + e.msg + (e.ms !== undefined ? '  (' + conMs(e.ms) + ')' : '') +
-      (e.detail !== undefined ? '\\n' + (typeof e.detail === 'string' ? e.detail : JSON.stringify(e.detail, null, 2))
-                                 .replace(/^/gm, '    ') : ''));
+    const lines = conEntries.map(e =>
+      conTime(e.t) + '  ' + (e.kind === 'ai' ? 'AI ' : 'App') + '  ' + e.msg + (e.ms !== undefined ? '  (' + conMs(e.ms) + ')' : '') +
+      (e.detail !== undefined ? '\\n' + conText(e.detail).replace(/^/gm, '    ') : ''));
     try {{ await navigator.clipboard.writeText(lines.join('\\n')); flash('console copied'); }}
     catch (err) {{ flash('could not copy: ' + err.message, 'error'); }}
   }});
@@ -1244,17 +1166,10 @@ PAGE = """<!DOCTYPE html>
     }};
     grab.addEventListener('pointermove', move); grab.addEventListener('pointerup', up);
   }});
-  window.addEventListener('error', e => conLog('page', 'error', /^uncaught/i.test(e.message) ? e.message : 'Uncaught ' + e.message,
-    e.error && e.error.stack ? e.error.stack : (e.filename || '') + ':' + (e.lineno || '')));
-  window.addEventListener('unhandledrejection', e => conLog('page', 'error',
-    'unhandled rejection: ' + ((e.reason && e.reason.message) || e.reason), e.reason && e.reason.stack));
-  conLog('page', 'info', 'page loaded — ' + SOURCE, {{ url: location.href, editable: EDITABLE,
-    hash: FILEHASH.slice(0, 12), scheme: SCHEME, bullets: tree.querySelectorAll('li').length,
-    orphaned_tags: ORPHANS, draft_orphans: Object.keys(DRAFT_ORPHANS).length }});
 
   let flashTimer = null;
-  function flash(msg, cls) {{
-    if (msg) conLog('ui', cls === 'error' ? 'warn' : 'info', msg);
+  function flash(msg, cls, logged) {{
+    if (msg && cls === 'error' && !logged) conLog('app', 'warn', msg);   // a refused action
     status.textContent = msg; status.className = cls || '';
     clearTimeout(flashTimer);
     if (msg) flashTimer = setTimeout(() => {{ status.textContent = ''; status.className = ''; }}, 2500);
@@ -1314,6 +1229,8 @@ PAGE = """<!DOCTYPE html>
     span.dataset.tag = next || '';
     renumberChips();
     markDirty();
+    conLog('app', 'info', (next ? 'tagged ' : 'untagged ') + conName(span.closest('li')) +
+           (next ? ' as ' + (sch.titles[next] || next) : ''));
   }}
 
   // client-side mirror of the server's render_inline
@@ -1570,11 +1487,13 @@ PAGE = """<!DOCTYPE html>
     const m = undoStack.pop();
     if (!m) {{ flash('nothing to undo'); return; }}
     placeAt(m.li, m.before); redoStack.push(m); flash(m.what + ' undone');
+    conLog('app', 'info', 'undid ' + m.what + ' of ' + conName(m.li));
   }}
   function redoMove() {{
     const m = redoStack.pop();
     if (!m) {{ flash('nothing to redo'); return; }}
     placeAt(m.li, m.after); undoStack.push(m); flash(m.what + ' redone');
+    conLog('app', 'info', 'redid ' + m.what + ' of ' + conName(m.li));
   }}
   document.addEventListener('keydown', e => {{
     if (!EDITABLE || !(e.metaKey || e.ctrlKey) || e.altKey || e.key.toLowerCase() !== 'z') return;
@@ -1596,13 +1515,16 @@ PAGE = """<!DOCTYPE html>
       mdview.value = mdBaseline;
       document.body.classList.add('mdmode');
       mdBtn.textContent = 'Outline';
+      conLog('app', 'info', 'opened the Markdown view');
     }} else {{
       if (mdview.value !== mdBaseline) {{
         const bullets = parseMarkdown(mdview.value);
         if (!bullets.length) {{ flash('no bullets found — fix the markdown first', 'error'); return; }}
         buildTree(bullets);
         markDirty();
-      }}
+        conLog('app', 'info', 'applied Markdown edits — ' + bullets.length + ' bullets',
+               {{ before: mdBaseline, after: mdview.value }});
+      }} else conLog('app', 'info', 'closed the Markdown view — no changes');
       document.body.classList.remove('mdmode');
       mdBtn.textContent = 'Markdown';
     }}
@@ -1638,6 +1560,8 @@ PAGE = """<!DOCTYPE html>
     li.remove();
     if (from) toLeafIfEmpty(from);
     recordChange(li, before, null, 'delete');
+    const nested = li.querySelectorAll('li').length;
+    conLog('app', 'info', 'deleted ' + conName(li) + (nested ? ' with ' + nested + ' nested' : ''));
     renumberChips(); markDirty();
     flash('deleted · ⌘Z to undo');
   }}
@@ -1662,11 +1586,16 @@ PAGE = """<!DOCTYPE html>
     const existing = [...li.querySelectorAll(':scope > ul > li.pbody > .row .txt')].map(t => t.dataset.raw);
     gen.classList.add('busy'); gen.title = 'writing…';
     flash('writing the paragraph…');
+    const who = conName(li);
+    conLog('ai', 'info', 'asked to write ' + who + (existing.length ? ' (a fresh version)' : ''));
+    const t0 = performance.now();
+    let info = {{}};
     try {{
-      const r = await apiFetch('/generate', {{ method: 'POST',
+      const r = await fetch('/generate', {{ method: 'POST',
         headers: {{'Content-Type': 'application/json'}},
         body: JSON.stringify({{ outline: toMarkdown(serialize()), target: span.dataset.raw, path, existing }}) }});
       const data = await r.json();
+      info = data.info || {{}};
       if (!r.ok) throw new Error(data.error || r.status);
       const text = (data.text || '').replace(/\\s+/g, ' ').trim();
       if (!text) throw new Error('the model returned no text');
@@ -1681,9 +1610,14 @@ PAGE = """<!DOCTYPE html>
       recordChange(nb, null, posOf(nb), 'generate');
       showLevels(99);                              // make sure the written level is on screen
       renumberChips(); markDirty();
+      conLog('ai', 'info', 'wrote ' + who + ' — ' + text.split(' ').length + ' words via ' +
+             (info.backend || 'the model') + (info.model ? ' (' + info.model + ')' : ''),
+             Object.assign({{ reply: text }}, info), performance.now() - t0);
       flash(existing.length ? 'written · earlier text kept below it · ⌘Z to undo' : 'written · ⌘Z to undo');
     }} catch (err) {{
-      flash('could not write the paragraph: ' + err.message, 'error');
+      conLog('ai', 'error', 'could not write ' + who + ': ' + err.message,
+             Object.assign({{ error: err.message }}, info), performance.now() - t0);
+      flash('could not write the paragraph: ' + err.message, 'error', true);
     }} finally {{
       gen.classList.remove('busy'); gen.title = 'write this paragraph';
     }}
@@ -1734,6 +1668,7 @@ PAGE = """<!DOCTYPE html>
       if (done) return;
       const val = span.textContent.replace(/\\n+/g, ' ').trim();
       if (!val || val === span.dataset.raw) {{ cancel(); return; }}
+      const oldRaw = span.dataset.raw;
       // a trailing ' {{X}}' typed inline becomes the bullet's tag
       const st = splitTag(val);
       span.dataset.raw = st.text.trim();
@@ -1749,6 +1684,9 @@ PAGE = """<!DOCTYPE html>
         flash('inserted · ⌘Z to undo');
       }}
       renumberChips();                              // heading-ness may have changed
+      if (liEl) conLog('app', 'info', (oldRaw ? 'edited ' : 'inserted ') + conName(liEl) +
+                       (oldRaw ? '' : ' under ' + conName(parentLiOf(liEl))),
+                       oldRaw ? {{ before: oldRaw, after: span.dataset.raw }} : undefined);
       if (liEl && liEl.classList.contains('lvhide'))
         flash('staged, but hidden at this level — pick a deeper level to see it', 'error');
       markDirty();
@@ -1780,7 +1718,8 @@ PAGE = """<!DOCTYPE html>
           moved = true;
         }}
       }}
-      if (moved) {{ recordMove(li, before); renumberChips(); markDirty(); }}
+      if (moved) {{ recordMove(li, before); renumberChips(); markDirty();
+        conLog('app', 'info', (out ? 'outdented ' : 'indented ') + conName(li)); }}
       span.focus();
       if (span.firstChild) {{
         const r = document.createRange();
@@ -1968,6 +1907,7 @@ PAGE = """<!DOCTYPE html>
     recordMove(dragLi, before);
     renumberChips();
     markDirty();
+    conLog('app', 'info', 'moved ' + conName(dragLi) + ' ' + where + ' ' + conName(li));
   }});
 
   // ---- settings sidebar (top-right menu) ----
@@ -1997,11 +1937,13 @@ PAGE = """<!DOCTYPE html>
   setTagging.addEventListener('change', () => {{
     settings.tagging = setTagging.checked;
     saveSettings(); applySettings();
+    conLog('app', 'info', 'paragraph tagging ' + (settings.tagging ? 'on' : 'off'));
   }});
   document.querySelectorAll('input[name="scheme"]').forEach(r =>
     r.addEventListener('change', () => {{
       // scheme is document metadata: staged now, written to the sidecar on Save
-      if (r.checked) {{ settings.scheme = r.value; applySettings(); markDirty(); }}
+      if (r.checked) {{ settings.scheme = r.value; applySettings(); markDirty();
+        conLog('app', 'info', 'tagging scheme → ' + SCHEMES[r.value].label); }}
     }}));
   applySettings();   // reinterpret server-rendered badges per settings
   {{
@@ -2025,14 +1967,19 @@ PAGE = """<!DOCTYPE html>
       if (!bullets.length) {{ flash('nothing to save — the outline is empty', 'error'); return; }}
     }}
     try {{
-      const r = await apiFetch('/save', {{ method: 'POST',
+      const r = await fetch('/save', {{ method: 'POST',
         headers: {{'Content-Type': 'application/json'}},
         body: JSON.stringify({{ hash: FILEHASH, scheme: settings.scheme, bullets,
                                 draft_orphans: DRAFT_ORPHANS }}) }});
-      if (!r.ok) throw new Error((await r.json()).error || r.status);
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || r.status);
+      conLog('app', 'info', 'saved — ' + bullets.length + ' bullets → ' + (data.files || []).join(', '));
       dirty = false;
       location.reload();
-    }} catch (err) {{ flash('save failed: ' + err.message, 'error'); }}
+    }} catch (err) {{
+      conLog('app', 'error', 'save failed: ' + err.message);
+      flash('save failed: ' + err.message, 'error', true);
+    }}
   }}
   saveBtn.addEventListener('click', doSave);
   document.addEventListener('keydown', e => {{
@@ -2045,7 +1992,6 @@ PAGE = """<!DOCTYPE html>
     let open = false;
     try {{ open = sessionStorage.getItem(CON_OPEN_KEY) === '1'; }} catch {{}}
     conOpen(open, false);
-    if (!open) conPull();
   }}
 </script>
 </body>
@@ -2227,7 +2173,7 @@ def combined_hash(source: Path) -> str:
     return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()
 
 
-def build_page(source: Path, editable: bool, stats: dict | None = None) -> str:
+def build_page(source: Path, editable: bool) -> str:
     text = source.read_text(encoding="utf-8")
     meta = load_meta(source)
     tree = parse_outline(text)
@@ -2259,11 +2205,6 @@ def build_page(source: Path, editable: bool, stats: dict | None = None) -> str:
     orphans = sum(1 for k in meta["tags"] if k not in used)
     draft_orphans = {k: v for k, v in draft.items() if k not in draft_used}
     assign_numbers(tree)
-    if stats is not None:
-        count = lambda nodes: sum(1 + count(n["children"]) for n in nodes)   # noqa: E731
-        stats.update(bullets=count(tree), tags=len(used), orphaned_tags=orphans,
-                     written_paragraphs=sum(len(v["texts"]) for k, v in draft.items() if k in draft_used),
-                     draft_orphans=len(draft_orphans), scheme=meta["scheme"])
     body = "\n".join(render_node(n) for n in tree)
     return PAGE.format(
         title=source.stem,
@@ -2282,39 +2223,7 @@ def build_page(source: Path, editable: bool, stats: dict | None = None) -> str:
     )
 
 
-class ActivityLog:
-    """The server's side of the page's console: a bounded, thread-safe list of
-    events (page builds, model calls, saves, conflicts, failures), each with a
-    sequence number so the page can pull only what it has not seen
-    (GET /log?after=N). `boot` changes when the server restarts."""
-
-    def __init__(self, maxlen: int = 500):
-        self.entries, self.maxlen, self.seq = [], maxlen, 0
-        self.boot = format(int(time.time() * 1000), "x")
-        self.lock = threading.Lock()
-
-    def add(self, level: str, msg: str, detail=None, ms: float | None = None) -> None:
-        with self.lock:
-            self.seq += 1
-            e = {"seq": self.seq, "t": int(time.time() * 1000), "level": level, "msg": msg}
-            if detail is not None:
-                e["detail"] = detail
-            if ms is not None:
-                e["ms"] = round(ms, 1)
-            self.entries = (self.entries + [e])[-self.maxlen:]
-
-    def since(self, after: int) -> dict:
-        with self.lock:
-            return {"boot": self.boot, "entries": [e for e in self.entries if e["seq"] > after]}
-
-
-def clip(text: str, n: int = 4000) -> str:
-    return text if len(text) <= n else text[:n] + f"\n… ({len(text) - n} more chars)"
-
-
 def serve(source: Path, port: int, open_browser: bool = True, model: str = "claude-opus-5"):
-    log = ActivityLog()
-
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code, body, ctype="text/html; charset=utf-8"):
             data = body.encode("utf-8")
@@ -2325,60 +2234,37 @@ def serve(source: Path, port: int, open_browser: bool = True, model: str = "clau
             self.wfile.write(data)
 
         def do_GET(self):
-            url = urlparse(self.path)
-            if url.path == "/log":
-                try:
-                    after = int(parse_qs(url.query).get("after", ["0"])[0])
-                except ValueError:
-                    after = 0
-                self._send(200, json.dumps(log.since(after)), "application/json")
-            elif url.path in ("/", "/index.html"):
-                t0, stats = time.perf_counter(), {}
-                try:
-                    page = build_page(source, editable=True, stats=stats)
-                except (Exception, SystemExit) as e:  # noqa: BLE001 — the console reports a failed build
-                    log.add("error", f"GET / — page build failed: {e}")
-                    self._send(500, f"could not build the page: {e}", "text/plain")
-                    return
-                self._send(200, page)
-                log.add("info", f"GET / — page built from {source.name}",
-                        dict(stats, bytes=len(page.encode("utf-8"))), (time.perf_counter() - t0) * 1000)
+            if self.path in ("/", "/index.html"):
+                self._send(200, build_page(source, editable=True))
             else:
                 self._send(404, "not found", "text/plain")
 
         def do_POST(self):
             if self.path == "/generate":
-                t0, info, target = time.perf_counter(), {}, ""
+                # the reply carries what was called (backend, command, usage,
+                # the prompt itself) so the page's console can show the AI side
+                t0, info = time.perf_counter(), {}
                 try:
                     req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-                    target = req.get("target", "")
                     prompt = build_generate_prompt(req)
-                    info.update(target=target, prompt_chars=len(prompt))
-                    log.add("info", f"generate — calling {model} for {target[:60]!r}")
+                    info["prompt"] = prompt
                     text = generate_text(prompt, model, source.parent, info)
-                    self._send(200, json.dumps({"text": text}), "application/json")
-                    log.add("info", f"generate — {len(text)} chars back via {info.get('backend')}",
-                            dict(info, reply=clip(text), prompt=clip(prompt, 20000)),
-                            (time.perf_counter() - t0) * 1000)
-                    print(f"  wrote: {target[:60]!r} ({len(text)} chars)")
+                    info["seconds"] = round(time.perf_counter() - t0, 2)
+                    self._send(200, json.dumps({"text": text, "info": info}), "application/json")
+                    print(f"  wrote: {req.get('target', '')[:60]!r} ({len(text)} chars)")
                 except Exception as e:  # noqa: BLE001 — report any generation failure to the client
-                    self._send(500, json.dumps({"error": str(e)}), "application/json")
-                    log.add("error", f"generate failed: {str(e)[:200]}", dict(info, error=str(e)),
-                            (time.perf_counter() - t0) * 1000)
+                    info["seconds"] = round(time.perf_counter() - t0, 2)
+                    self._send(500, json.dumps({"error": str(e), "info": info}), "application/json")
                 return
             if self.path != "/save":
                 self._send(404, "not found", "text/plain")
                 return
-            t0 = time.perf_counter()
             try:
                 req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-                disk = combined_hash(source)
-                if disk != req["hash"]:
+                if combined_hash(source) != req["hash"]:
                     self._send(409, json.dumps(
                         {"error": "file changed on disk — refresh the page (your staged edits will be lost)"}),
                         "application/json")
-                    log.add("warn", "save refused — the files changed on disk since the page was loaded",
-                            {"page_hash": req["hash"][:12], "disk_hash": disk[:12]})
                     return
                 current = source.read_text(encoding="utf-8")
                 cur_lines = current.splitlines(keepends=True)
@@ -2407,17 +2293,12 @@ def serve(source: Path, port: int, open_browser: bool = True, model: str = "clau
                 n_written = len(draft_lines) - len(skeleton)
                 if n_written or orphans or draft_path(source).exists():
                     write_draft(source, draft_lines, orphans)
-                self._send(200, json.dumps({"ok": True}), "application/json")
-                files = {p.name: f"{p.stat().st_size} bytes"
-                         for p in (source, tags_path(source), draft_path(source)) if p.exists()}
-                log.add("info", f"saved — {len(skeleton)} bullets, {len(tagged)} tags, {n_written} written",
-                        {"files": files, "scheme": scheme, "draft_orphans": len(orphans)},
-                        (time.perf_counter() - t0) * 1000)
+                files = [p.name for p in (source, tags_path(source), draft_path(source)) if p.exists()]
+                self._send(200, json.dumps({"ok": True, "files": files}), "application/json")
                 print(f"  saved: {len(skeleton)} bullets, {len(tagged)} tags, "
                       f"{n_written} written paragraphs -> {draft_path(source).name}", flush=True)
             except Exception as e:  # noqa: BLE001 — report any save failure to the client
                 self._send(400, json.dumps({"error": str(e)}), "application/json")
-                log.add("error", f"save failed: {e}", None, (time.perf_counter() - t0) * 1000)
 
         def log_message(self, *args):  # quiet
             pass
@@ -2425,9 +2306,6 @@ def serve(source: Path, port: int, open_browser: bool = True, model: str = "clau
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     url = f"http://127.0.0.1:{port}/"
     print(f"serving {source} at {url}  (staged edits write on Save; Ctrl-C to stop)")
-    log.add("info", f"server started — serving {source.name} on port {port}",
-            {"source": str(source.resolve()), "model": model, "python": sys.version.split()[0],
-             "claude_cli": shutil.which("claude")})
     if open_browser:
         webbrowser.open(url)
     try:
