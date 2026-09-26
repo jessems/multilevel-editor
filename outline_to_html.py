@@ -520,6 +520,8 @@ PAGE = """<!DOCTYPE html>
   .mnote::before {{ content:''; flex:0 0 auto; width:12px; height:12px;
     background:color-mix(in srgb, var(--err) 65%, var(--mut));
     -webkit-mask:var(--icon) center/contain no-repeat; mask:var(--icon) center/contain no-repeat; }}
+  .mnote.vers::before {{ background:var(--acc);
+    --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2L2 7l10 5 10-5-10-5z'/%3E%3Cpath d='M2 17l10 5 10-5'/%3E%3Cpath d='M2 12l10 5 10-5'/%3E%3C/svg%3E"); }}
   .mnote.cite::before {{ --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 21c3 0 7-1 7-8V5c0-1.25-.76-2-2-2H4c-1.25 0-2 .75-2 2v6c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 0-1 1v3c0 1 0 1 1 1z'/%3E%3Cpath d='M15 21c3 0 7-1 7-8V5c0-1.25-.76-2-2-2h-4c-1.25 0-2 .75-2 2v6c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z'/%3E%3C/svg%3E"); }}
   .act {{ order:2; flex:0 0 80px; display:flex; justify-content:flex-end; gap:4px;
           padding:5px 2px; border-radius:6px; }}
@@ -544,6 +546,80 @@ PAGE = """<!DOCTYPE html>
                        animation:spin 1s linear infinite; }}
   @keyframes spin {{ to {{ transform:rotate(360deg); }} }}
   .row.confirming > .act > .gen {{ display:none; }}
+  /* AI edit (sparkle, every row): opens a prompt box under the bullet; the
+     rewrite becomes a new version of the bullet, switchable with its tabs */
+  .aie {{ opacity:0; transition:opacity .1s; }}
+  .aie::before {{ --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9z'/%3E%3Cpath d='M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z'/%3E%3C/svg%3E"); }}
+  .row:hover > .act > .aie, .aie:focus-visible, li.ai-open > .row > .act > .aie {{ opacity:1; }}
+  .aie:hover, li.ai-open > .row > .act > .aie {{ color:var(--acc); }}
+  li.regen > .row > .act > .aie {{ opacity:1; color:var(--acc); cursor:progress; }}
+  li.regen > .row > .act > .aie::before {{ animation:twinkle 1.1s ease-in-out infinite; }}
+  @keyframes twinkle {{ 50% {{ transform:scale(.72) rotate(18deg); opacity:.55; }} }}
+  .row.confirming > .act > .aie {{ display:none; }}
+  /* the prompt box: a local composer hung under the bullet, aligned with its text */
+  .aibox {{ display:flex; align-items:flex-end; gap:6px; margin:4px 86px 8px 28px;
+           padding:6px 6px 6px 10px; background:var(--editbg);
+           border:1px solid color-mix(in srgb, var(--acc) 55%, var(--line)); border-radius:9px;
+           box-shadow:0 6px 18px -12px rgba(0,0,0,.35); font:13.5px/1.45 var(--sans);
+           animation:cardin .12s ease-out; }}
+  .aibox::before {{ content:''; flex:0 0 14px; height:14px; margin-bottom:7px; background:var(--acc);
+    -webkit-mask:var(--icon) center/contain no-repeat; mask:var(--icon) center/contain no-repeat;
+    --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9z'/%3E%3C/svg%3E"); }}
+  .aibox textarea {{ flex:1 1 auto; min-width:0; resize:none; border:none; outline:none;
+                    background:transparent; color:var(--ink); font:inherit; padding:4px 0;
+                    field-sizing:content; min-height:1.45em; max-height:9em; }}
+  .aibox textarea::placeholder {{ color:var(--mut); }}
+  .aibox button {{ flex:0 0 auto; height:28px; border-radius:7px; cursor:pointer;
+                  font:600 12.5px/1 var(--sans); padding:0 11px; border:1px solid transparent; }}
+  .aibox .ai-go {{ background:var(--acc); color:var(--bg); }}
+  .aibox .ai-go:disabled {{ opacity:.4; cursor:default; }}
+  .aibox .ai-x {{ background:none; color:var(--mut); padding:0 7px; font-size:16px; font-weight:400; }}
+  .aibox .ai-x:hover {{ background:var(--hover); color:var(--ink); }}
+  /* regenerating: the text dims under a travelling sheen, with a label in the gutter */
+  li.regen > .row > .main > .txt {{ position:relative; cursor:progress; color:transparent;
+    background:linear-gradient(100deg, var(--mut) 0%, var(--mut) 38%, var(--acc) 50%, var(--mut) 62%, var(--mut) 100%);
+    background-size:250% 100%; -webkit-background-clip:text; background-clip:text;
+    animation:sheen 1.4s linear infinite; }}
+  li.regen > .row > .main > .txt .ph {{ color:transparent; }}
+  @keyframes sheen {{ from {{ background-position:100% 0; }} to {{ background-position:-150% 0; }} }}
+  li.regen > .row > .main {{ box-shadow:inset 2px 0 0 var(--acc); }}
+  .regen-label {{ display:block; margin:0 86px 4px 28px; font:500 11.5px/1.3 var(--sans);
+                 color:var(--acc); letter-spacing:.02em; }}
+  .regen-label::after {{ content:'…'; display:inline-block; width:1.2em; text-align:left;
+                        animation:ellipsis 1.2s steps(4) infinite; overflow:hidden; vertical-align:bottom; }}
+  @keyframes ellipsis {{ from {{ width:0; }} to {{ width:1.2em; }} }}
+  .txt.vin {{ animation:vin .5s ease-out; }}
+  @keyframes vin {{ from {{ opacity:0; filter:blur(3px); background:var(--sel); }}
+                    to {{ opacity:1; filter:none; background:transparent; }} }}
+  /* version tabs, above the bullet: one per variant of it (Original, v2, v3 …).
+     A quiet segmented control led by a sparkle — tinted just enough to be
+     noticed — and a thin accent rule on the bullet it governs. */
+  .vtabs {{ display:flex; align-items:center; gap:1px; width:max-content; max-width:calc(100% - 114px);
+           margin:0 86px 4px 28px; padding:1px 2px 1px 7px; flex-wrap:wrap;
+           background:color-mix(in srgb, var(--acc) 6%, var(--bg));
+           border:1px solid color-mix(in srgb, var(--acc) 25%, var(--line)); border-radius:8px;
+           font:500 11.5px/1 var(--sans); }}
+  .vtabs::before {{ content:''; flex:0 0 11px; height:11px; margin-right:3px; background:var(--acc); opacity:.8;
+    -webkit-mask:var(--icon) center/contain no-repeat; mask:var(--icon) center/contain no-repeat;
+    --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9z'/%3E%3Cpath d='M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z'/%3E%3C/svg%3E"); }}
+  .vtabs button {{ border:none; background:none; color:var(--mut); cursor:pointer;
+                  font:inherit; height:21px; padding:0 8px; border-radius:6px; }}
+  .vtabs button:hover {{ color:var(--ink); background:var(--hover); }}
+  .vtabs button.on {{ background:var(--chip); color:var(--acc); font-weight:600; }}
+  .vtabs .vnav {{ padding:0 6px; font-size:13px; }}
+  .vtabs .vnav:disabled {{ opacity:.3; cursor:default; background:none; }}
+  /* hovering the tabs or their bullet turns the strip into a folder tab: its
+     border opens at the bottom and runs on around the bullet as one frame */
+  .vtabs {{ --vframe:color-mix(in srgb, var(--acc) 25%, var(--line));
+           position:relative; z-index:1; margin-bottom:0; border-color:transparent;
+           transition:border-color .12s; }}
+  li.versioned:has(> .vtabs:hover, > .row:hover) > .vtabs {{
+    border-color:var(--vframe); border-bottom-color:transparent; border-bottom-left-radius:0; border-bottom-right-radius:0; }}
+  li.versioned:has(> .vtabs:hover, > .row:hover) > .row > .main {{
+    box-shadow:0 0 0 1px color-mix(in srgb, var(--acc) 25%, var(--line));
+    background:color-mix(in srgb, var(--acc) 6%, var(--bg)); }}
+  li.regen > .vtabs {{ opacity:.45; pointer-events:none; }}
+  body.readonly .aibox, body.readonly .vtabs {{ display:none; }}
   .del::before {{ --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6'/%3E%3C/svg%3E"); }}
   .row:hover > .act > .del, .del:focus-visible {{ opacity:1; }}
   .del:hover {{ color:var(--err); }}
@@ -1096,17 +1172,25 @@ PAGE = """<!DOCTYPE html>
   // A paragraph heading (numbered row) whose text holds a [cite] placeholder
   // — [cite], [cite: …] — gets a "Citation needed" badge in the right margin
   // (×n when there are several). Recomputed with the chips, and live while
-  // the bullet is being edited.
+  // the bullet is being edited. A bullet with AI-edit versions (any level)
+  // gets an "n versions" note there too.
   const CITE_RE = /\\[cite\\b[^\\]]*\\]/gi;
+  const versions = new WeakMap();                 // li -> {{ list: [raw…], at: index }} (AI edit)
   function syncMargin(row, raw) {{
+    const notes = [];                           // versions first, then citations
+    const v = versions.get(row.parentElement);
+    if (v && v.list.length > 1)
+      notes.push('<span class="mnote vers" title="showing ' + (v.at ? 'v' + (v.at + 1) : 'the original') +
+                 ' of ' + v.list.length + ' — switch with the tabs above the bullet">' +
+                 v.list.length + ' versions</span>');
     const n = row.classList.contains('numbered') ? (raw.match(CITE_RE) || []).length : 0;
+    if (n) notes.push('<span class="mnote cite" title="this paragraph has ' + n + ' [cite] placeholder' +
+                      (n > 1 ? 's' : '') + '">Citation needed' + (n > 1 ? ' ×' + n : '') + '</span>');
     let m = row.querySelector(':scope > .margin');
-    if (!n) {{ if (m) m.remove(); return; }}
+    if (!notes.length) {{ if (m) m.remove(); return; }}
     if (!m) {{ m = document.createElement('div'); m.className = 'margin'; row.append(m); }}
-    const label = 'Citation needed' + (n > 1 ? ' ×' + n : '');
-    if (m.textContent !== label)
-      m.innerHTML = '<span class="mnote cite" title="this paragraph has ' + n +
-                    ' [cite] placeholder' + (n > 1 ? 's' : '') + '">' + label + '</span>';
+    const html = notes.join('');
+    if (m.innerHTML !== html) m.innerHTML = html;
   }}
   // hang the notes in the margin only when there is room beside the column
   function fitMargin() {{
@@ -1143,6 +1227,9 @@ PAGE = """<!DOCTYPE html>
           if (!span.isContentEditable) syncMargin(span.closest('.row'), raw);
           // numbered rows get the quill (generate written text) before the trash
           const act = li.querySelector(':scope > .row > .act');
+          // every row gets the AI-edit sparkle, first in the action slot
+          if (act && !act.querySelector(':scope > .aie'))
+            act.prepend(iconButton('aie', 'AI edit — rewrite this bullet from a prompt'));
           let gen = act && act.querySelector(':scope > .gen');
           if (numbered && act && !gen) {{
             gen = iconButton('gen', 'write this paragraph');
@@ -1387,8 +1474,178 @@ PAGE = """<!DOCTYPE html>
     }}
   }}
 
+  // ---- AI edit: rewrite one bullet from a prompt, keep every version as a tab ----
+  // The sparkle (every row, any level) opens a composer under the bullet.
+  // Submitting sends the staged outline, the bullet's position and the prompt
+  // to POST /rewrite; while the model works the bullet shimmers. The reply
+  // becomes a new VERSION of the bullet: the bullet shows it, and a tab strip
+  // above the bullet (Original · v2 · v3 …, ‹ › to step) switches between the
+  // versions — whichever tab is active is the bullet's text, staged for Save.
+  // A further AI edit rewrites the active version and adds another tab.
+  // Versions live in
+  // the page only: Save writes the active one, a reload forgets the rest.
+  // hang the composer / tab strip / label under the bullet's TEXT (past grip, chip, badge)
+  function alignToText(el, li) {{
+    const t = li.querySelector(':scope > .row .txt');
+    el.style.marginLeft = Math.max(0, t.getBoundingClientRect().left - li.getBoundingClientRect().left) + 'px';
+  }}
+  function closeAiBox(li) {{
+    const box = li.querySelector(':scope > .aibox');
+    if (box) box.remove();
+    li.classList.remove('ai-open');
+  }}
+  function openAiBox(li) {{
+    if (li.classList.contains('regen')) return;
+    if (document.activeElement && document.activeElement.isContentEditable)
+      document.activeElement.blur();               // stage a pending inline edit first
+    if (!li.isConnected) return;                   // an emptied new bullet vanishes on blur
+    const open = li.querySelector(':scope > .aibox');
+    tree.querySelectorAll('li.ai-open').forEach(o => {{ if (o !== li) closeAiBox(o); }});
+    if (open) {{ open.querySelector('textarea').focus(); return; }}
+    const box = document.createElement('div');
+    box.className = 'aibox';
+    box.innerHTML = '<textarea rows="1" placeholder="How should this bullet change? e.g. shorter, more assertive, cite the rule first"></textarea>' +
+      '<button type="button" class="ai-go" disabled>Rewrite</button>' +
+      '<button type="button" class="ai-x" title="close (Esc)" aria-label="close">×</button>';
+    const ta = box.querySelector('textarea'), go = box.querySelector('.ai-go');
+    ta.value = li.dataset.aiPrompt || '';          // the last prompt used on this bullet
+    go.disabled = !ta.value.trim();
+    ta.addEventListener('input', () => {{ go.disabled = !ta.value.trim(); }});
+    ta.addEventListener('keydown', ev => {{
+      if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing) {{ ev.preventDefault(); go.click(); }}
+      if (ev.key === 'Escape') {{ ev.preventDefault(); ev.stopPropagation(); closeAiBox(li); }}
+    }});
+    go.addEventListener('click', () => {{ if (ta.value.trim()) aiRewrite(li, ta.value.trim()); }});
+    box.querySelector('.ai-x').addEventListener('click', () => closeAiBox(li));
+    li.querySelector(':scope > .row').after(box);
+    li.classList.add('ai-open');
+    alignToText(box, li);
+    ta.focus(); ta.select();
+  }}
+  // what kind of bullet this is, so the rewrite stays the same kind
+  function bulletKind(li) {{
+    const h = headingLevel(li);
+    if (h) return {{ kind: 'heading', level: h }};
+    if (isBody(li)) return {{ kind: 'body' }};
+    return {{ kind: li.querySelector(':scope > .row.numbered') ? 'para' : 'item' }};
+  }}
+  function setBulletText(li, raw) {{
+    const span = li.querySelector(':scope > .row .txt');
+    span.dataset.raw = raw;
+    const d = renderMd(raw);
+    span.innerHTML = d.html;
+    span.className = 'txt ' + d.cls;
+    span.classList.remove('vin'); void span.offsetWidth; span.classList.add('vin');
+  }}
+  function renderTabs(li) {{
+    const v = versions.get(li);
+    let strip = li.querySelector(':scope > .vtabs');
+    li.classList.toggle('versioned', !!v && v.list.length > 1);
+    syncMargin(li.querySelector(':scope > .row'), li.querySelector(':scope > .row .txt').dataset.raw);
+    if (!v || v.list.length < 2) {{ if (strip) strip.remove(); return; }}
+    if (!strip) {{
+      strip = document.createElement('div');
+      strip.className = 'vtabs';
+      strip.setAttribute('role', 'tablist');
+      strip.setAttribute('aria-label', 'versions of this bullet');
+      li.querySelector(':scope > .row').before(strip);   // tabs sit above the bullet
+    }}
+    alignToText(strip, li);
+    const b = (cls, label, title, extra = '') =>
+      '<button type="button" class="' + cls + '" title="' + esc(title) + '"' + extra + '>' + label + '</button>';
+    strip.innerHTML =
+      b('vnav', '‹', 'previous version', v.at === 0 ? ' disabled' : '') +
+      v.list.map((raw, i) => b(i === v.at ? 'vtab on' : 'vtab', i ? 'v' + (i + 1) : 'Original',
+                              raw.length > 160 ? raw.slice(0, 160) + '…' : raw,
+                              ' role="tab" data-v="' + i + '" aria-selected="' + (i === v.at) + '"')).join('') +
+      b('vnav', '›', 'next version', v.at === v.list.length - 1 ? ' disabled' : '');
+  }}
+  function showVersion(li, i) {{
+    const v = versions.get(li);
+    if (!v || i < 0 || i >= v.list.length || i === v.at) return;
+    v.at = i;
+    setBulletText(li, v.list[i]);
+    renderTabs(li);
+    renumberChips();                              // a heading may have become a paragraph, or back
+    markDirty();
+  }}
+  async function aiRewrite(li, prompt) {{
+    if (li.classList.contains('regen')) return;
+    const span = li.querySelector(':scope > .row .txt');
+    const bullets = serialize();
+    let index = -1, k = 0;
+    (function walk(ul) {{                          // the bullet's position in serialize() order
+      [...ul.children].forEach(x => {{
+        if (index >= 0) return;
+        if (x === li) index = k;
+        k += 1;
+        const sub = x.querySelector(':scope > ul');
+        if (sub) walk(sub);
+      }});
+    }})(tree);
+    if (index < 0) return;
+    li.dataset.aiPrompt = prompt;
+    closeAiBox(li);
+    const source = span.dataset.raw;
+    li.classList.add('regen');
+    const label = document.createElement('span');
+    label.className = 'regen-label';
+    label.textContent = 'Regenerating';
+    li.querySelector(':scope > .row').after(label);
+    alignToText(label, li);
+    try {{
+      const r = await fetch('/rewrite', {{ method: 'POST',
+        headers: {{'Content-Type': 'application/json'}},
+        body: JSON.stringify({{ outline: toMarkdown(bullets), index, target: source, prompt,
+                                ...bulletKind(li) }}) }});
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || r.status);
+      const text = (data.text || '').replace(/\\s+/g, ' ').trim();
+      if (!text) throw new Error('the model returned no text');
+      if (!li.isConnected) throw new Error('the bullet was removed meanwhile');
+      let v = versions.get(li);
+      if (!v) {{ v = {{ list: [source], at: 0 }}; versions.set(li, v); }}
+      v.list.push(text);
+      v.at = v.list.length - 1;
+      li.classList.remove('regen');                 // before the text lands, so it fades in unmasked
+      setBulletText(li, text);
+      renderTabs(li);
+      renumberChips(); markDirty();
+      flash('rewritten as v' + v.list.length + ' · tabs above the bullet switch versions');
+    }} catch (err) {{
+      flash('AI edit failed: ' + err.message, 'error');
+    }} finally {{
+      li.classList.remove('regen');
+      label.remove();
+    }}
+  }}
+  tree.addEventListener('click', e => {{
+    const tab = e.target.closest('.vtabs button');
+    if (!tab) return;
+    const li = tab.closest('li'), v = versions.get(li);
+    if (!v) return;
+    if (tab.classList.contains('vnav')) showVersion(li, v.at + (tab.textContent === '‹' ? -1 : 1));
+    else showVersion(li, +tab.dataset.v);
+  }});
+  // ←/→ step through the versions while the pointer is over the bullet
+  let hoverLi = null;
+  tree.addEventListener('mouseover', e => {{ hoverLi = e.target.closest('li'); }});
+  tree.addEventListener('mouseleave', () => {{ hoverLi = null; }});
+  document.addEventListener('keydown', e => {{
+    if (!hoverLi || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || e.metaKey || e.ctrlKey || e.altKey) return;
+    const a = document.activeElement;
+    if (a && (a.isContentEditable || a.tagName === 'TEXTAREA' || a.tagName === 'INPUT')) return;
+    for (let li = hoverLi; li; li = parentLiOf(li)) {{
+      const v = versions.get(li);
+      if (v && v.list.length > 1) {{ e.preventDefault(); showVersion(li, v.at + (e.key === 'ArrowLeft' ? -1 : 1)); return; }}
+    }}
+  }});
+
   // ---- delegated events (survive tree rebuilds) ----
   tree.addEventListener('click', e => {{
+    if (e.target.closest('.aibox, .vtabs')) return;   // handled by their own listeners
+    const aie = e.target.closest('.aie');
+    if (aie) {{ if (EDITABLE) openAiBox(aie.closest('li')); return; }}
     const caret = e.target.closest('.caret');
     if (caret) {{ caret.closest('li').classList.toggle('open'); return; }}
     const badge = e.target.closest('.creac');
@@ -1408,6 +1665,7 @@ PAGE = """<!DOCTYPE html>
     e.preventDefault();
     if (!EDITABLE) {{ flash('read-only export — run with --serve to edit', 'error'); return; }}
     if (span.isContentEditable) return;
+    if (span.closest('li.regen')) {{ flash('this bullet is being regenerated'); return; }}
     const prev = span.innerHTML;
     span.textContent = span.dataset.raw;
     span.classList.add('editing');
@@ -1441,6 +1699,8 @@ PAGE = """<!DOCTYPE html>
       span.innerHTML = d.html;
       span.className = 'txt ' + d.cls;
       const liEl = span.closest('li');
+      const ver = liEl && versions.get(liEl);
+      if (ver) {{ ver.list[ver.at] = span.dataset.raw; renderTabs(liEl); }}   // a hand edit revises the active version
       if (liEl && liEl.dataset.pendingNew) {{     // a bullet born from insert-between
         delete liEl.dataset.pendingNew;
         recordChange(liEl, null, posOf(liEl), 'insert');
@@ -1818,6 +2078,78 @@ def build_generate_prompt(req: dict) -> str:
     return GENERATE_PROMPT.format(outline="\n".join(marked), target=target, existing=ex)
 
 
+REWRITE_PROMPT = """You are revising ONE bullet of a document outline, following an instruction.
+
+The outline below is a nested bullet list: heading bullets start with #, ## or
+###; the bullets under a heading are paragraphs, each given by its topic
+sentence; a bullet nested under a paragraph is that paragraph's written text.
+
+The bullet to revise is marked >>> TARGET <<< in the outline. It is {kind}.
+
+INSTRUCTION
+{instruction}
+
+Requirements:
+- Reply with the revised bullet text only: a single line, no leading "- ", no
+  quotation marks around the whole thing, no label, no commentary.
+- {shape}
+- Follow the instruction. Where it is silent, keep the bullet's meaning, and
+  keep it fitting its place between the neighbouring bullets.
+- Do not invent facts, names, dates, figures or citations. Keep bracketed
+  placeholders such as [cite] or [fact: …] and quoted passages verbatim unless
+  the instruction says otherwise; where a new claim needs support the outline
+  does not give, insert a placeholder.
+- Write in the language of the outline unless the instruction asks otherwise.
+
+OUTLINE
+{outline}
+
+CURRENT TEXT OF THE TARGET BULLET
+{target}"""
+
+REWRITE_KINDS = {
+    "para": ("a paragraph's topic sentence",
+             "Keep it one topic sentence that states the paragraph's point."),
+    "body": ("a paragraph's written text (the prose under a topic sentence)",
+             "Keep it one paragraph of prose."),
+    "item": ("an outline bullet", "Keep it a single outline bullet."),
+}
+
+
+def build_rewrite_prompt(req: dict) -> str:
+    index = int(req.get("index", -1))
+    lines = req.get("outline", "").splitlines()
+    if 0 <= index < len(lines):
+        lines[index] += "   >>> TARGET <<<"
+    kind = req.get("kind")
+    if kind == "heading":
+        level = max(1, min(6, int(req.get("level", 1))))
+        what = f"a level-{level} heading"
+        shape = (f"Keep it a level-{level} heading: start the reply with exactly "
+                 f"\"{'#' * level} \" and keep it heading-length.")
+    else:
+        what, shape = REWRITE_KINDS.get(kind, REWRITE_KINDS["item"])
+    return REWRITE_PROMPT.format(kind=what, instruction=req.get("prompt", "").strip(),
+                                 shape=shape, outline="\n".join(lines),
+                                 target=req.get("target", "").strip())
+
+
+def clean_rewrite(text: str, req: dict) -> str:
+    """One line; no bullet marker or wrapping quotes; a heading keeps its #s."""
+    t = " ".join(text.split())
+    t = re.sub(r"^[-*]\s+", "", t)
+    if len(t) > 1 and t[0] == t[-1] and t[0] in "\"'“”":
+        t = t[1:-1].strip()
+    if t[:1] == "“" and t[-1:] == "”":
+        t = t[1:-1].strip()
+    if req.get("kind") == "heading":
+        level = max(1, min(6, int(req.get("level", 1))))
+        t = "#" * level + " " + re.sub(r"^#{1,6}\s*", "", t)
+    else:
+        t = re.sub(r"^#{1,6}\s+", "", t)   # never turn a paragraph into a heading by accident
+    return t
+
+
 def generate_text(prompt: str, model: str, cwd: Path) -> str:
     """Ask the model for the paragraph. Backends, in order: the `anthropic`
     SDK when it is installed and has credentials; otherwise the `claude` CLI
@@ -1980,7 +2312,7 @@ def build_page(source: Path, editable: bool) -> str:
         orphans=orphans,
         draft_orphans=json.dumps(draft_orphans),
         draft_name=json.dumps(draft_path(source).name),
-        hint="click to edit · Enter adds a bullet below · drag to move · hover between bullets to insert · letter badge tags the paragraph role · quill writes the paragraph (draft) · trash to delete · ⌘Z undoes · Markdown for raw view · Save (⌘S) writes the skeleton and the draft"
+        hint="click to edit · Enter adds a bullet below · drag to move · hover between bullets to insert · letter badge tags the paragraph role · quill writes the paragraph (draft) · sparkle rewrites a bullet from your prompt; its tabs (or ← →) switch versions · trash to delete · ⌘Z undoes · Markdown for raw view · Save (⌘S) writes the skeleton and the draft"
         if editable else "",
     )
 
@@ -2009,6 +2341,17 @@ def serve(source: Path, port: int, open_browser: bool = True, model: str = "clau
                     self._send(200, json.dumps({"text": text}), "application/json")
                     print(f"  wrote: {req.get('target', '')[:60]!r} ({len(text)} chars)")
                 except Exception as e:  # noqa: BLE001 — report any generation failure to the client
+                    self._send(500, json.dumps({"error": str(e)}), "application/json")
+                return
+            if self.path == "/rewrite":
+                try:
+                    req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                    if not req.get("prompt", "").strip():
+                        raise ValueError("empty prompt")
+                    text = clean_rewrite(generate_text(build_rewrite_prompt(req), model, source.parent), req)
+                    self._send(200, json.dumps({"text": text}), "application/json")
+                    print(f"  rewrote: {req.get('target', '')[:50]!r} per {req.get('prompt', '')[:40]!r}", flush=True)
+                except Exception as e:  # noqa: BLE001 — report any rewrite failure to the client
                     self._send(500, json.dumps({"error": str(e)}), "application/json")
                 return
             if self.path != "/save":

@@ -137,6 +137,22 @@ back to the `.md` only when you press **Save**.
   paragraph, and nothing nests under it. Make it with the quill, by
   indenting a bullet under the paragraph above (Tab), or in the markdown
   view (which shows structure and text together).
+- **AI edit (sparkle button)** — every bullet, at every level, has a
+  sparkle in its action slot (hover the row). Clicking it opens a small
+  prompt box under the bullet; type how it should change and press Enter or
+  Rewrite. While the model works the bullet shimmers with a "Regenerating…"
+  label; the reply then replaces the text as a new **version**, and a tab
+  strip appears under the bullet — `Original · v2 · v3 …`, with ‹ › (or ←/→
+  while hovering the bullet) to step between them; hovering frames the
+  bullet with the tab strip as a folder tab, and an "n versions" note in the
+  right margin marks it. The active tab is the
+  bullet's text: it is what Save writes and what the markdown view shows. A
+  further AI edit rewrites the active version and adds another tab; a hand
+  edit revises the active version in place. The rewrite stays the same kind of bullet (a
+  heading keeps its `#` level, a topic sentence stays one sentence, written
+  text stays one paragraph) and keeps `[cite]`-style placeholders. Versions
+  live in the page only — a reload after Save keeps just the active one.
+  Posts to `/rewrite`; same model backend as the quill. Serve mode only.
 - **Write the paragraph (quill button)** — every numbered paragraph has a
   quill next to its trash icon (hover the row). Clicking it sends the whole
   staged outline, with that paragraph marked, to a model and inserts the

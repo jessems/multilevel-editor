@@ -55,6 +55,16 @@ warning. Save serializes the whole outline from the page and rewrites the
   bracketed placeholder (`[…]`). Chips recompute on every
   reorder/edit/rebuild; the markdown view and the `.md` contain plain bullets
   with no number labels.
+- **Sparkle button — AI edit any bullet.** Every row (all levels) carries a
+  sparkle before the quill/trash. It opens a prompt box under the bullet;
+  submitting posts the staged outline, the bullet's index and kind, and the
+  prompt to `/rewrite` (same backend/`--model` as the quill). The bullet
+  shimmers while regenerating, then shows the rewrite as a new version with a
+  tab strip above it (`Original · v2 …`, ‹ ›, or ←/→ while hovering; framed
+  with the bullet on hover; an "n versions" margin note marks it) — the
+  active tab is what Save writes. Headings
+  keep their `#` level; placeholders are kept. Versions are page-only (lost on
+  reload/Save, markdown-view round-trip).
 - **Quill button — write the paragraph.** Numbered rows carry a quill next to
   the trash (hover). It posts the staged outline with the paragraph marked to
   `/generate`; the server asks the model (the `anthropic` SDK with
