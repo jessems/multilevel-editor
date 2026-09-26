@@ -511,6 +511,52 @@ PAGE = """<!DOCTYPE html>
   #insertHint:hover .plus {{ background:var(--acc); color:var(--bg); }}
   body.readonly #insertHint {{ display:none; }}
 
+  /* ---------- navigator (left sidebar): the outline's levels as a descending tree ---------- */
+  :root {{ --navw:264px; --hdr-h:52px; }}
+  #navBtn {{ width:30px; padding:5px 0; align-self:center; }}
+  #navBtn::before {{ content:''; display:inline-block; width:15px; height:15px;
+    vertical-align:middle; background:currentColor;
+    -webkit-mask:var(--icon) center/contain no-repeat;
+    mask:var(--icon) center/contain no-repeat;
+    --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Cpath d='M9 3v18'/%3E%3C/svg%3E"); }}
+  #navBtn:hover::before, body.nav-open #navBtn::before {{ background:var(--acc); }}
+  #nav {{ position:fixed; left:0; top:var(--hdr-h); bottom:0; width:var(--navw); z-index:1;
+         display:none; box-sizing:border-box; overflow-y:auto; padding:14px 8px 40px 10px;
+         background:var(--bg); border-right:1px solid var(--line); font:13px/1.35 var(--sans); }}
+  body.nav-open #nav {{ display:block; }}
+  body.nav-open main {{ margin-left:max(calc(var(--navw) + 16px), calc((100% - 780px) / 2)); }}
+  body.mdmode #nav {{ opacity:.45; pointer-events:none; }}   /* stale while the raw text is edited */
+  .nav-title {{ font:600 11px/1 var(--sans); letter-spacing:.08em; text-transform:uppercase;
+               color:var(--mut); padding:0 6px 10px; }}
+  #nav ul {{ list-style:none; margin:0; padding:0 0 0 12px; border-left:none; }}
+  #nav > ul {{ padding-left:0; }}
+  #nav li:not(.open) > ul, #nav li.deep {{ display:none; }}
+  .nrow {{ display:flex; align-items:center; border-radius:5px; }}
+  .nrow:hover {{ background:var(--hover); }}
+  #nav li.current > .nrow {{ background:var(--chip); }}
+  .ncaret, .nspace {{ flex:0 0 16px; height:24px; }}
+  .ncaret {{ border:none; background:none; padding:0; cursor:pointer; border-radius:4px; }}
+  .ncaret::before {{ content:''; display:inline-block; vertical-align:middle;
+    border-left:5px solid var(--mut); border-top:4px solid transparent;
+    border-bottom:4px solid transparent; transition:transform .12s; }}
+  .ncaret:hover::before {{ border-left-color:var(--ink); }}
+  #nav li.open > .nrow .ncaret::before {{ transform:rotate(90deg); }}
+  .nlabel {{ flex:1 1 auto; min-width:0; border:none; background:none; cursor:pointer;
+            text-align:left; padding:3px 4px; font:inherit; color:var(--ink);
+            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; border-radius:4px; }}
+  .nlabel.nh1, .nlabel.nh2 {{ font-weight:600; }}
+  .nlabel.npara {{ color:var(--mut); }}
+  .ncaret:focus-visible, .nlabel:focus-visible {{ outline:2px solid var(--acc); outline-offset:-2px; }}
+  .nnum {{ font:600 10.5px var(--sans); font-variant-numeric:tabular-nums; margin-right:6px; }}
+  /* a jump from the navigator lands below the sticky header and flashes the row */
+  .row {{ scroll-margin-top:calc(var(--hdr-h) + 12px); }}
+  @keyframes navflash {{ from {{ background:var(--sel); }} to {{ background:transparent; }} }}
+  .row.navflash > .main {{ animation:navflash 1.4s ease-out; }}
+  @media (max-width: 900px) {{   /* too narrow to sit beside the text: overlay it */
+    body.nav-open main {{ margin-left:auto; }}
+    #nav {{ z-index:5; box-shadow:6px 0 24px rgba(0,0,0,.12); }}
+  }}
+
   @media (max-width: 640px) {{
     body {{ font-size:16px; }}
     header {{ padding:8px 14px; }}
@@ -525,6 +571,7 @@ PAGE = """<!DOCTYPE html>
 </head>
 <body class="{bodycls}">
 <header>
+  <button id="navBtn" aria-label="navigator" title="navigator" aria-controls="nav" aria-expanded="false"></button>
   <h1>{title}</h1>
   <span class="src">{source}</span>
   <button id="mdBtn">Markdown</button>
@@ -548,6 +595,7 @@ PAGE = """<!DOCTYPE html>
       <span class="sb-sub">Gutachtenstil — Obersatz · Definition · Subsumtion · Ergebnis</span></span></label>
   </fieldset>
 </aside>
+<nav id="nav" aria-label="navigator"><div class="nav-title">Navigator</div><ul id="navTree"></ul></nav>
 <main>
 <ul id="tree">{tree}</ul>
 <textarea id="mdview" spellcheck="false"></textarea>
@@ -586,6 +634,122 @@ PAGE = """<!DOCTYPE html>
   const levelBar = document.getElementById('levels');
   const LEVEL_KEY = 'multilevel-editor.level:' + SOURCE;
   let level = 0;                               // 0 = everything; N = levels 1..N only
+
+  // ---- navigator: the outline as a descending tree in the left sidebar ----
+  // Follows the level switch like a walk down a directory tree: in mode N
+  // every node above level N is expanded and the level-N nodes sit collapsed,
+  // so the top level shows the lone top node, level 2 opens it onto its
+  // children, and so on. Written text (the level under a paragraph) is never
+  // listed. A caret toggle is a manual override kept until the next level
+  // change. Clicking a label scrolls the outline to that bullet — switching
+  // to its level first when the current mode hides it. Rebuilt by syncLevels,
+  // i.e. after every level change and every structural or text change.
+  const nav = document.getElementById('nav');
+  const navTree = document.getElementById('navTree');
+  const navBtn = document.getElementById('navBtn');
+  const navOverride = new Map();               // outline li -> open? (manual caret toggles)
+  let navCurrent = null;                       // outline li last jumped to
+  function renderNav(rows, max, H) {{
+    const active = level && level < max ? level : max;
+    const info = new Map(rows.map(r => [r.li, r]));
+    const listed = li => {{ const r = info.get(li); return r && !(H && r.body) ? r : null; }};
+    const kidsOf = ul => ul ? [...ul.children].map(listed).filter(Boolean) : [];
+    function build(r) {{
+      const item = document.createElement('li');
+      item.navLi = r.li;
+      const row = document.createElement('div');
+      row.className = 'nrow';
+      const kids = kidsOf(r.li.querySelector(':scope > ul'));
+      const lead = document.createElement(kids.length ? 'button' : 'span');
+      if (kids.length) {{ lead.type = 'button'; lead.className = 'ncaret'; lead.setAttribute('aria-label', 'toggle'); }}
+      else lead.className = 'nspace';
+      const label = document.createElement('button');
+      label.type = 'button';
+      label.className = 'nlabel ' + (r.h ? 'nh' + r.h : H ? 'npara' : 'nitem');
+      const text = r.li.querySelector(':scope > .row .txt').dataset.raw
+                     .replace(/^#{{1,6}}\\s+/, '').replace(/[*`]/g, '');
+      const num = r.li.querySelector(':scope > .row > .main > .pnum');
+      if (num) {{
+        const n = document.createElement('span');
+        n.className = 'nnum'; n.textContent = num.textContent;
+        label.append(n);
+      }}
+      label.append(text || '…');
+      label.title = text;
+      row.append(lead, label);
+      item.append(row);
+      if (kids.length) {{
+        // the level opens a node onto its children at or above the level
+        // (paragraphs straight under a ## stay out of a heading view); a
+        // manual caret expand shows every child
+        const manual = navOverride.get(r.li);
+        item.classList.toggle('open', manual !== undefined ? manual
+          : r.lvl < active && kids.some(k => k.lvl <= active));
+        const ul = document.createElement('ul');
+        kids.forEach(k => {{
+          const it = build(k);
+          it.classList.toggle('deep', manual !== true && k.lvl > active);
+          ul.append(it);
+        }});
+        item.append(ul);
+      }}
+      item.classList.toggle('current', r.li === navCurrent);
+      return item;
+    }}
+    const top = nav.scrollTop;
+    navTree.replaceChildren(...kidsOf(tree).map(build));
+    nav.scrollTop = top;
+  }}
+  function revealBullet(li) {{
+    if (!li || !li.isConnected) return;
+    navCurrent = li;
+    if (li.classList.contains('lvhide')) {{       // hidden at this level: descend to it
+      const r = levelRows().rows.find(x => x.li === li);
+      if (r) showLevels(r.lvl);
+    }}
+    for (let p = parentLiOf(li); p; p = parentLiOf(p)) p.classList.add('open');
+    navTree.querySelectorAll('li').forEach(it => it.classList.toggle('current', it.navLi === li));
+    const row = li.querySelector(':scope > .row');
+    row.scrollIntoView({{ block: 'start', behavior: 'smooth' }});
+    row.classList.remove('navflash'); void row.offsetWidth; row.classList.add('navflash');
+    if (narrowNav.matches) setNav(false, false);
+  }}
+  navTree.addEventListener('click', e => {{
+    const item = e.target.closest('li');
+    if (!item) return;
+    if (e.target.closest('.ncaret')) {{
+      const open = !item.classList.contains('open');
+      item.classList.toggle('open', open);
+      navOverride.set(item.navLi, open);
+      if (open) item.querySelectorAll(':scope > ul > li.deep').forEach(k => k.classList.remove('deep'));
+    }} else if (e.target.closest('.nlabel')) revealBullet(item.navLi);
+  }});
+  // open beside the text on wide screens (remembered), as an overlay on narrow ones
+  const NAV_KEY = 'multilevel-editor.nav';
+  const narrowNav = matchMedia('(max-width: 900px)');
+  function setNav(open, remember) {{
+    document.body.classList.toggle('nav-open', open);
+    navBtn.setAttribute('aria-expanded', String(open));
+    if (remember) try {{ localStorage.setItem(NAV_KEY, open ? 'open' : 'closed'); }} catch {{}}
+  }}
+  navBtn.addEventListener('click', () =>
+    setNav(!document.body.classList.contains('nav-open'), !narrowNav.matches));
+  document.addEventListener('click', e => {{
+    if (narrowNav.matches && document.body.classList.contains('nav-open') &&
+        !e.target.closest('#nav') && !e.target.closest('#navBtn')) setNav(false, false);
+  }});
+  {{
+    let stored = null;
+    try {{ stored = localStorage.getItem(NAV_KEY); }} catch {{}}
+    setNav(!narrowNav.matches && stored !== 'closed', false);
+  }}
+  // the sidebar starts under the sticky header, whose height wraps with the title
+  {{
+    const header = document.querySelector('header');
+    const fit = () => document.documentElement.style.setProperty('--hdr-h', header.offsetHeight + 'px');
+    fit();
+    if (window.ResizeObserver) new ResizeObserver(fit).observe(header);
+  }}
   function eachRow(fn) {{                      // fn(li, depth, hasChildren), depth from 1
     (function walk(ul, d) {{
       [...ul.children].forEach(li => {{
@@ -642,6 +806,7 @@ PAGE = """<!DOCTYPE html>
     n = Math.max(n, minLevel(rows));
     level = n >= max ? 0 : n;
     rows.forEach(r => {{ if (r.branch && r.lvl < n) r.li.classList.add('open'); }});
+    navOverride.clear();                       // a level change resets the navigator's expansion
     if (remember) try {{ localStorage.setItem(LEVEL_KEY, level ? String(level) : 'all'); }} catch {{}}
     syncLevels();
   }}
@@ -679,6 +844,7 @@ PAGE = """<!DOCTYPE html>
       [...r.li.querySelector(':scope > ul').children].every(c => c.classList.contains('lvhide'))));
     const active = cut || max;
     [...levelBar.children].forEach(b => b.classList.toggle('on', +b.dataset.level === active));
+    renderNav(rows, max, H);
   }}
   levelBar.addEventListener('click', e => {{
     const b = e.target.closest('button');
@@ -1347,8 +1513,10 @@ PAGE = """<!DOCTYPE html>
     }}
     return bestD <= DROP_SNAP ? best : null;
   }}
+  const overNav = e => e.target instanceof Element && !!e.target.closest('#nav');
   document.addEventListener('dragover', e => {{
     if (!dragLi) return;
+    if (overNav(e)) {{ clearMarks(); return; }}   // the sidebar is not a drop margin
     const row = dropRowAt(e);
     if (!row) {{ clearMarks(); return; }}
     const li = row.closest('li');
@@ -1361,7 +1529,7 @@ PAGE = """<!DOCTYPE html>
     row.classList.add(e.clientY < r.top + r.height / 2 ? 'drop-before' : 'drop-after');
   }});
   document.addEventListener('drop', e => {{
-    if (!dragLi) return;
+    if (!dragLi || overNav(e)) return;
     const row = dropRowAt(e);
     if (!row) return;
     const li = row.closest('li');

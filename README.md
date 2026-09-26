@@ -23,6 +23,17 @@ back to the `.md` only when you press **Save**.
 
 ## Features
 
+- **Navigator** — a left sidebar (toggle: panel icon, top left) listing the
+  outline as a tree that **descends with the level switch**, like walking
+  down a directory: in mode N every node above level N is expanded and the
+  level-N nodes sit collapsed, so the top mode shows the lone title, the
+  next opens it onto its sections, and so on (paragraphs straight under a
+  `##` stay out of a heading view). Carets expand a node by hand — showing
+  all its children — until the next level change. Clicking a label scrolls
+  the outline to that bullet and flashes it, switching to its level first
+  when the current mode hides it. Written text is never listed. Open beside
+  the text on wide screens (remembered), an overlay under 900px. Works in
+  the static export too.
 - **Collapsible tree** — carets on branch bullets, plus a **level switch**
   centred at the bottom of the header with one mode per **heading level**
   the outline uses (icon: that many bulleted, stepped-in bars), then one for the
