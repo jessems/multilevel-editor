@@ -326,7 +326,10 @@ PAGE = """<!DOCTYPE html>
   .dot::before {{ content:''; display:inline-block; width:5px; height:5px; border-radius:50%;
                  background:var(--mut); opacity:.75; vertical-align:middle;
                  position:relative; top:-1px; }}
-  .row.numbered > .main > .dot {{ display:none; }}
+  /* the number chip is the marker on numbered rows: no dot, and no caret
+     either when the paragraph has written text under it (the level switch
+     shows or hides that text), so its heading stays aligned with its siblings */
+  .row.numbered > .main > .dot, .row.numbered > .main > .caret {{ display:none; }}
 
   /* text */
   .txt {{ flex:1 1 auto; min-width:0; overflow-wrap:break-word;
@@ -459,7 +462,7 @@ PAGE = """<!DOCTYPE html>
      no handle of its own and no dot; the paragraph it belongs to reads as a
      heading over it */
   li.pbody > .row .grip {{ display:none; }}
-  li.pbody > .row > .main > .dot {{ visibility:hidden; }}
+  li.pbody > .row > .main > .dot {{ visibility:hidden; width:40px; }}   /* text starts past the heading text */
   li.written > .row > .main > .txt {{ font-weight:600; }}
   li.dragging {{ opacity:.35; }}
   .row.drop-before > .main {{ box-shadow:0 -2px 0 var(--acc); }}
