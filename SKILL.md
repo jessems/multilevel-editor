@@ -50,6 +50,14 @@ warning. Save serializes the whole outline from the page and rewrites the
   bracketed placeholder (`[…]`). Chips recompute on every
   reorder/edit/rebuild; the markdown view and the `.md` contain plain bullets
   with no number labels.
+- **Quill button — write the paragraph.** Numbered rows carry a quill next to
+  the trash (hover). It posts the staged outline with the paragraph marked to
+  `/generate`; the server asks the model (the `anthropic` SDK with
+  `ANTHROPIC_API_KEY` if installed, else the `claude` CLI on PATH, tool-less,
+  `--model`, default `claude-opus-5`) for one paragraph that uses only the
+  outline's content and keeps `[cite]`-style placeholders, then inserts it as
+  written text under the paragraph (staged, ⌘Z undoes, Save writes; earlier
+  written text stays below). The view jumps to the written level.
 - **Drag to move**: a grip (`⋮⋮`) appears left of a bullet on hover; dragging
   it moves the bullet **with its whole subtree** (indicator line shows the
   before/after drop position; the bullet adopts the target's indent). Chips

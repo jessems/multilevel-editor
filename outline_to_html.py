@@ -32,7 +32,10 @@ import argparse
 import hashlib
 import html
 import json
+import os
 import re
+import shutil
+import subprocess
 import sys
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -411,7 +414,7 @@ PAGE = """<!DOCTYPE html>
      row, so revealing controls never changes the text column's width. On
      hover the slot shows a trash; clicking it swaps in a check (delete) and
      a cross (cancel) in the same slot. */
-  .act {{ flex:0 0 52px; display:flex; justify-content:flex-end; gap:4px;
+  .act {{ flex:0 0 80px; display:flex; justify-content:flex-end; gap:4px;
           padding:5px 2px; border-radius:6px; }}
   .row:hover > .act, .row.confirming > .act {{ background:var(--hover); }}
   .act button {{ flex:0 0 auto; width:24px; border:none; background:none; cursor:pointer;
@@ -424,7 +427,16 @@ PAGE = """<!DOCTYPE html>
                          mask:var(--icon) center/contain no-repeat; }}
   .act button:hover {{ background:var(--chip); }}
   .act button:focus-visible {{ outline:2px solid var(--acc); outline-offset:-2px; }}
-  .del {{ opacity:0; transition:opacity .1s; }}
+  .del, .gen {{ opacity:0; transition:opacity .1s; }}
+  /* the quill: generate the paragraph's written text (numbered rows only) */
+  .gen::before {{ --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5zM16 8L2 22M17.5 15H9'/%3E%3C/svg%3E"); }}
+  .row:hover > .act > .gen, .gen:focus-visible {{ opacity:1; }}
+  .gen:hover {{ color:var(--acc); }}
+  .gen.busy {{ opacity:1; color:var(--acc); cursor:progress; }}
+  .gen.busy::before {{ --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83'/%3E%3C/svg%3E");
+                       animation:spin 1s linear infinite; }}
+  @keyframes spin {{ to {{ transform:rotate(360deg); }} }}
+  .row.confirming > .act > .gen {{ display:none; }}
   .del::before {{ --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6'/%3E%3C/svg%3E"); }}
   .row:hover > .act > .del, .del:focus-visible {{ opacity:1; }}
   .del:hover {{ color:var(--err); }}
@@ -778,6 +790,13 @@ PAGE = """<!DOCTYPE html>
             chip = null;
           }}
           span.closest('.row').classList.toggle('numbered', numbered);
+          // numbered rows get the quill (generate written text) before the trash
+          const act = li.querySelector(':scope > .row > .act');
+          let gen = act && act.querySelector(':scope > .gen');
+          if (numbered && act && !gen) {{
+            gen = iconButton('gen', 'write this paragraph');
+            act.insertBefore(gen, act.querySelector(':scope > .del'));
+          }} else if (!numbered && gen) gen.remove();
           // role badge sits before the number chip: a letter when tagged,
           // an empty click target on numbered rows, nothing otherwise
           const letter = span.dataset.tag || null;
@@ -974,6 +993,49 @@ PAGE = """<!DOCTYPE html>
   }});
   document.addEventListener('keydown', e => {{ if (e.key === 'Escape') cancelConfirm(); }});
 
+  // ---- generate a paragraph's written text (quill button) ----
+  // Sends the whole staged outline plus the target paragraph to the server,
+  // which asks the model for the paragraph's prose; the reply comes back as a
+  // new written-text bullet under the paragraph (staged, undoable, saved
+  // with everything else on Save). Existing written text is kept below it.
+  async function generateFor(li) {{
+    const gen = li.querySelector(':scope > .row > .act > .gen');
+    if (!gen || gen.classList.contains('busy')) return;
+    if (document.activeElement && document.activeElement.isContentEditable)
+      document.activeElement.blur();               // stage a pending inline edit first
+    const span = li.querySelector(':scope > .row .txt');
+    const path = [];
+    for (let p = parentLiOf(li); p; p = parentLiOf(p)) path.unshift(p.querySelector(':scope > .row .txt').dataset.raw);
+    const existing = [...li.querySelectorAll(':scope > ul > li.pbody > .row .txt')].map(t => t.dataset.raw);
+    gen.classList.add('busy'); gen.title = 'writing…';
+    flash('writing the paragraph…');
+    try {{
+      const r = await fetch('/generate', {{ method: 'POST',
+        headers: {{'Content-Type': 'application/json'}},
+        body: JSON.stringify({{ outline: toMarkdown(serialize()), target: span.dataset.raw, path, existing }}) }});
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || r.status);
+      const text = (data.text || '').replace(/\\s+/g, ' ').trim();
+      if (!text) throw new Error('the model returned no text');
+      if (!li.isConnected) throw new Error('the paragraph was removed meanwhile');
+      const nb = freshBullet();
+      delete nb.dataset.pendingNew;
+      const t = nb.querySelector('.txt');
+      t.dataset.raw = text;
+      const d = renderMd(text); t.innerHTML = d.html; t.className = 'txt ' + d.cls;
+      toBranch(li);
+      li.querySelector(':scope > ul').prepend(nb);
+      recordChange(nb, null, posOf(nb), 'generate');
+      showLevels(99);                              // make sure the written level is on screen
+      renumberChips(); markDirty();
+      flash(existing.length ? 'written · earlier text kept below it · ⌘Z to undo' : 'written · ⌘Z to undo');
+    }} catch (err) {{
+      flash('could not write the paragraph: ' + err.message, 'error');
+    }} finally {{
+      gen.classList.remove('busy'); gen.title = 'write this paragraph';
+    }}
+  }}
+
   // ---- delegated events (survive tree rebuilds) ----
   tree.addEventListener('click', e => {{
     const caret = e.target.closest('.caret');
@@ -982,6 +1044,8 @@ PAGE = """<!DOCTYPE html>
     if (badge) {{ if (EDITABLE) cycleTag(badge); return; }}
     const del = e.target.closest('.del');
     if (del) {{ if (EDITABLE) askDelete(del.closest('.row')); return; }}
+    const gen = e.target.closest('.gen');
+    if (gen) {{ if (EDITABLE) generateFor(gen.closest('li')); return; }}
     const ok = e.target.closest('.ok');
     if (ok) {{ doDelete(ok.closest('li')); return; }}
     if (e.target.closest('.no')) {{ cancelConfirm(); return; }}
@@ -1318,6 +1382,87 @@ PAGE = """<!DOCTYPE html>
 """
 
 
+GENERATE_PROMPT = """You are writing one paragraph of a document from its outline.
+
+The outline below is a nested bullet list: heading bullets start with #, ## or
+###; the bullets under a heading are paragraphs, each given by its topic
+sentence; a bullet nested under a paragraph is that paragraph's written text.
+
+Write the full text of ONE paragraph: the one whose topic sentence is marked
+>>> TARGET <<< in the outline. Requirements:
+- One paragraph of prose, in the language of the outline. No heading, no
+  bullet, no label, no quotation marks around the whole thing, no commentary.
+- Open with the topic sentence's point (you may polish its wording) and develop
+  it so the paragraph reads naturally between the neighbouring paragraphs.
+- Use only what the outline states or clearly implies. Do not invent facts,
+  names, dates, figures or citations. Where the paragraph needs a fact or a
+  source the outline does not supply, keep or insert a bracketed placeholder
+  such as [cite] or [fact: what is needed].
+- Keep any bracketed placeholders from the topic sentence, and keep quoted
+  passages verbatim.
+- Match the register and tone of the outline.
+
+Reply with the paragraph text only.
+
+OUTLINE
+{outline}
+
+TARGET TOPIC SENTENCE
+{target}
+{existing}"""
+
+
+def build_generate_prompt(req: dict) -> str:
+    target = req.get("target", "").strip()
+    outline = req.get("outline", "")
+    marked = []
+    done = False
+    for line in outline.splitlines():
+        body = re.sub(r" \{[A-Za-z]\}$", "", line.strip())   # ignore a projected role tag
+        if not done and body == "- " + target:
+            line = line + "   >>> TARGET <<<"
+            done = True
+        marked.append(line)
+    existing = [e for e in req.get("existing", []) if e.strip()]
+    ex = ""
+    if existing:
+        ex = ("\nEXISTING WRITTEN TEXT (a fresh version is wanted; you may reuse what is good)\n"
+              + "\n".join("- " + e for e in existing))
+    return GENERATE_PROMPT.format(outline="\n".join(marked), target=target, existing=ex)
+
+
+def generate_text(prompt: str, model: str, cwd: Path) -> str:
+    """Ask the model for the paragraph. Backends, in order: the `anthropic`
+    SDK when it is installed and has credentials; otherwise the `claude` CLI
+    (Claude Code) on PATH, run tool-less and non-interactively."""
+    try:
+        import anthropic  # optional — the tool itself stays stdlib-only
+    except ImportError:
+        anthropic = None
+    if anthropic is not None and (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+        client = anthropic.Anthropic()
+        resp = client.messages.create(
+            model=model, max_tokens=16000,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        if resp.stop_reason == "refusal":
+            raise RuntimeError("the model declined this request")
+        return "".join(b.text for b in resp.content if b.type == "text")
+    cli = shutil.which("claude")
+    if not cli:
+        raise RuntimeError("no model backend: install the `claude` CLI, or `pip install anthropic` "
+                           "and set ANTHROPIC_API_KEY")
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}   # allow nesting inside a session
+    proc = subprocess.run(
+        [cli, "-p", "--output-format", "text", "--model", model, "--tools", "",
+         "--no-session-persistence"],
+        input=prompt, capture_output=True, text=True, cwd=str(cwd), env=env, timeout=600,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError((proc.stderr or proc.stdout or "claude CLI failed").strip()[-400:])
+    return proc.stdout.strip()
+
+
 def combined_hash(source: Path) -> str:
     """Conflict guard spans the outline AND its sidecar."""
     text = source.read_text(encoding="utf-8")
@@ -1361,12 +1506,12 @@ def build_page(source: Path, editable: bool) -> str:
         filehash=combined_hash(source),
         scheme=meta["scheme"],
         orphans=orphans,
-        hint="click to edit · Enter adds a bullet below · drag to move · hover between bullets to insert · letter badge tags the paragraph role · trash to delete · ⌘Z undoes · Markdown for raw view · Save (⌘S) writes to the .md"
+        hint="click to edit · Enter adds a bullet below · drag to move · hover between bullets to insert · letter badge tags the paragraph role · quill writes the paragraph · trash to delete · ⌘Z undoes · Markdown for raw view · Save (⌘S) writes to the .md"
         if editable else "",
     )
 
 
-def serve(source: Path, port: int, open_browser: bool = True):
+def serve(source: Path, port: int, open_browser: bool = True, model: str = "claude-opus-5"):
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code, body, ctype="text/html; charset=utf-8"):
             data = body.encode("utf-8")
@@ -1383,6 +1528,15 @@ def serve(source: Path, port: int, open_browser: bool = True):
                 self._send(404, "not found", "text/plain")
 
         def do_POST(self):
+            if self.path == "/generate":
+                try:
+                    req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                    text = generate_text(build_generate_prompt(req), model, source.parent)
+                    self._send(200, json.dumps({"text": text}), "application/json")
+                    print(f"  wrote: {req.get('target', '')[:60]!r} ({len(text)} chars)")
+                except Exception as e:  # noqa: BLE001 — report any generation failure to the client
+                    self._send(500, json.dumps({"error": str(e)}), "application/json")
+                return
             if self.path != "/save":
                 self._send(404, "not found", "text/plain")
                 return
@@ -1442,10 +1596,12 @@ def main():
     ap.add_argument("--port", type=int, default=8383)
     ap.add_argument("--no-browser", action="store_true",
                     help="don't open a browser tab (for server restarts)")
+    ap.add_argument("--model", default="claude-opus-5",
+                    help="model for the quill button (paragraph writing); default claude-opus-5")
     args = ap.parse_args()
 
     if args.serve:
-        serve(args.source, args.port, open_browser=not args.no_browser)
+        serve(args.source, args.port, open_browser=not args.no_browser, model=args.model)
         return
     out = args.output or args.source.with_suffix(".html")
     out.write_text(build_page(args.source, editable=False), encoding="utf-8")

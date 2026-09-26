@@ -109,6 +109,18 @@ back to the `.md` only when you press **Save**.
   it by indenting a bullet under the paragraph above (Tab) or in the
   markdown view; several written bullets under one paragraph are fine (e.g.
   lettered sub-items).
+- **Write the paragraph (quill button)** — every numbered paragraph has a
+  quill next to its trash icon (hover the row). Clicking it sends the whole
+  staged outline, with that paragraph marked, to a model and inserts the
+  reply as the paragraph's written text — staged like any edit, undoable
+  with Cmd/Ctrl+Z, written to the file on Save; existing written text is
+  kept below the new version. The prompt asks for one paragraph in the
+  outline's language that uses only what the outline states, keeps bracketed
+  placeholders such as `[cite]`, and invents nothing. Backend, in order: the
+  `anthropic` SDK if it is installed and `ANTHROPIC_API_KEY` is set;
+  otherwise the `claude` CLI (Claude Code) on PATH, run tool-less and
+  non-interactively in the outline's directory. Model: `--model` (default
+  `claude-opus-5`). Serve mode only.
 - **Nesting rules** — under a paragraph only its written text may nest (a
   childless non-heading bullet); drops never land inside a paragraph; and a
   heading can only be moved under a heading of a shallower level, so a `#`
@@ -138,7 +150,8 @@ invocable as `/multilevel-editor`.
 
 ## Requirements
 
-Python ≥ 3.9. Nothing else.
+Python ≥ 3.9. Nothing else — except for the quill button, which needs either
+the `claude` CLI on PATH or `pip install anthropic` plus `ANTHROPIC_API_KEY`.
 
 ## Provenance
 
