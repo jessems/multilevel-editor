@@ -37,7 +37,10 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import webbrowser
+from datetime import date
+from urllib.parse import parse_qs, urlparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -663,6 +666,102 @@ PAGE = """<!DOCTYPE html>
   #insertHint:hover .plus {{ background:var(--acc); color:var(--bg); }}
   body.readonly #insertHint {{ display:none; }}
 
+  /* ---------- a variant being written: banner + live-filling tree ---------- */
+  #genBanner {{ margin:-4px 0 22px; padding:14px 16px 12px; border:1px solid var(--line); border-radius:10px;
+                background:var(--editbg); font:13px/1.45 var(--sans); color:var(--ink); }}
+  .gen-head {{ display:flex; align-items:center; gap:9px; }}
+  .gen-dot {{ width:9px; height:9px; border-radius:50%; background:var(--acc); flex:0 0 auto;
+             animation:genpulse 1.2s ease-in-out infinite; }}
+  .gen-count {{ margin-left:auto; color:var(--mut); font-variant-numeric:tabular-nums; }}
+  .gen-sub {{ color:var(--mut); margin:4px 0 0 18px; }}
+  .gen-bar {{ position:relative; height:3px; margin:12px 0 0; border-radius:2px; overflow:hidden;
+             background:color-mix(in srgb, var(--acc) 18%, transparent); }}
+  .gen-bar span {{ position:absolute; inset:0; width:38%; border-radius:2px; background:var(--acc);
+                  animation:genslide 1.6s cubic-bezier(.4,0,.2,1) infinite; }}
+  .gen-err {{ color:var(--err); margin-top:10px; }}
+  .gen-err a {{ color:inherit; }}
+  body.gen-done .gen-dot {{ animation:none; background:var(--ok); }}
+  body.gen-done .gen-bar span {{ animation:none; width:100%; background:var(--ok); }}
+  body.gen-failed .gen-dot {{ animation:none; background:var(--err); }}
+  body.gen-failed .gen-bar {{ display:none; }}
+  @keyframes genpulse {{ 0%,100% {{ transform:scale(.8); opacity:.55; }} 50% {{ transform:scale(1.15); opacity:1; }} }}
+  @keyframes genslide {{ from {{ left:-40%; }} to {{ left:100%; }} }}
+  /* bullets arriving from the stream fade in; the placeholder title breathes */
+  @keyframes genfade {{ from {{ opacity:0; transform:translateY(3px); }} to {{ opacity:1; transform:none; }} }}
+  body.generating li.fresh > .row {{ animation:genfade .35s ease-out both; }}
+  body.generating .txt.h1.placeholder-title {{ color:var(--mut); animation:genpulse 1.6s ease-in-out infinite; }}
+  body.generating #levels, body.generating .main-tools {{ display:none; }}   /* the tabs stay: this variant's is active */
+
+  /* ---------- main tools (top right of the reading column) + variant dialog ---------- */
+  .main-tools {{ display:flex; justify-content:flex-end; align-items:center; gap:12px; margin:-6px 0 16px; }}
+  /* document tabs: the skeleton and its variants (Original, v1, v2 …) as a
+     strip sitting on the outline's title row — the same quiet segmented
+     control as a bullet's version tabs, led by the branch glyph; ‹ › step
+     through the family, the active tab is this document. Its border shows on
+     hover, when the strip becomes a folder tab whose frame runs on around
+     the title it governs. */
+  .dtabs {{ display:flex; align-items:center; gap:1px; flex-wrap:wrap; width:max-content; max-width:calc(100% - 28px);
+           margin:0 0 0 32px; padding:1px 2px 1px 7px; position:relative; z-index:1;
+           background:color-mix(in srgb, var(--acc) 6%, var(--bg));
+           --vframe:color-mix(in srgb, var(--acc) 25%, var(--line));
+           border:1px solid transparent; border-radius:8px; transition:border-color .12s;
+           font:500 11.5px/1 var(--sans); }}
+  .dtabs:empty {{ display:none; }}
+  body.has-tabs #tree > li:first-child {{ margin-top:0; }}        /* the title sits flush under its tabs */
+  body:has(#docTabs:hover, #tree > li:first-child > .row:hover) #docTabs {{
+    border-color:var(--vframe); border-bottom-color:transparent;
+    border-bottom-left-radius:0; border-bottom-right-radius:0; }}
+  body:has(#docTabs:hover, #tree > li:first-child > .row:hover) #tree > li:first-child > .row > .main {{
+    box-shadow:0 0 0 1px var(--vframe, color-mix(in srgb, var(--acc) 25%, var(--line)));
+    background:color-mix(in srgb, var(--acc) 6%, var(--bg)); }}
+  .dtabs::before {{ content:''; flex:0 0 11px; height:11px; margin-right:3px; background:var(--acc); opacity:.8;
+    -webkit-mask:var(--icon) center/contain no-repeat; mask:var(--icon) center/contain no-repeat;
+    --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 3v12'/%3E%3Ccircle cx='18' cy='6' r='3'/%3E%3Ccircle cx='6' cy='18' r='3'/%3E%3Cpath d='M18 9a9 9 0 0 1-9 9'/%3E%3C/svg%3E"); }}
+  .dtabs button {{ border:none; background:none; color:var(--mut); cursor:pointer;
+                  font:inherit; height:21px; padding:0 8px; border-radius:6px; }}
+  .dtabs button:hover {{ color:var(--ink); background:var(--hover); }}
+  .dtabs button.on {{ background:var(--chip); color:var(--acc); font-weight:600; }}
+  .dtabs button.pending {{ font-style:italic; }}
+  .dtabs .dnav {{ padding:0 6px; font-size:13px; }}
+  .dtabs .dnav:disabled {{ opacity:.3; cursor:default; background:none; }}
+  /* the primary action of the top level: an accent pill with a branch icon,
+     in the header's sans face — the same voice as the armed Save button */
+  #variantBtn {{ display:inline-flex; align-items:center; gap:7px; cursor:pointer;
+                        font:600 12.5px/1 var(--sans); letter-spacing:.01em; padding:8px 14px 8px 12px;
+                        color:var(--bg); background:var(--acc); border:1px solid var(--acc); border-radius:999px;
+                        box-shadow:0 1px 2px rgba(0,0,0,.10);
+                        transition:transform .08s ease, box-shadow .12s ease, filter .12s ease; }}
+  #variantBtn::before {{ content:''; display:inline-block; width:14px; height:14px; background:currentColor;
+    -webkit-mask:var(--icon) center/contain no-repeat; mask:var(--icon) center/contain no-repeat;
+    --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 3v12'/%3E%3Ccircle cx='18' cy='6' r='3'/%3E%3Ccircle cx='6' cy='18' r='3'/%3E%3Cpath d='M18 9a9 9 0 0 1-9 9'/%3E%3C/svg%3E"); }}
+  #variantBtn:hover {{ filter:brightness(1.07); box-shadow:0 3px 8px rgba(0,0,0,.16); transform:translateY(-1px); }}
+  #variantBtn:active {{ transform:none; box-shadow:0 1px 2px rgba(0,0,0,.10); filter:none; }}
+  #variantBtn:focus-visible {{ outline:2px solid var(--acc); outline-offset:3px; }}
+  body:not(.toplevel) #variantBtn {{ display:none; }}            /* the button lives on the top level only… */
+  body:not(.toplevel) .main-tools,                               /* …the tabs on every level */
+  body.readonly .main-tools, body.mdmode .main-tools, body.mdmode .dtabs {{ display:none; }}
+  #variantDlg {{ border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink);
+                 padding:20px 22px 18px; width:min(560px, 92vw); box-sizing:border-box;
+                 font:14px/1.5 var(--sans); box-shadow:0 18px 50px rgba(0,0,0,.25); }}
+  #variantDlg::backdrop {{ background:rgba(0,0,0,.35); }}
+  #variantDlg h2 {{ margin:0 0 6px; font:600 16px/1.3 var(--sans); }}
+  .dlg-sub {{ margin:0 0 12px; color:var(--mut); font-size:13px; }}
+  #variantPrompt {{ width:100%; box-sizing:border-box; font:15px/1.55 var(--serif); color:var(--ink);
+                    background:var(--editbg); border:1px solid var(--line); border-radius:8px;
+                    padding:10px 12px; resize:vertical; }}
+  #variantPrompt::placeholder {{ color:var(--mut); opacity:.9; }}
+  #variantPrompt:focus {{ outline:2px solid var(--acc); outline-offset:-1px; }}
+  .dlg-hint {{ margin:6px 0 0; color:var(--mut); font-size:12px; }}
+  .dlg-err {{ margin:8px 0 0; color:var(--err); font-size:13px; min-height:1.2em; }}
+  .dlg-actions {{ display:flex; gap:8px; align-items:center; margin-top:14px; }}
+  .dlg-spacer {{ flex:1 1 auto; }}
+  .dlg-actions button {{ font:500 12.5px/1 var(--sans); padding:7px 12px; cursor:pointer;
+                         color:var(--ink); background:var(--btn); border:1px solid var(--line); border-radius:6px; }}
+  .dlg-actions button:hover {{ border-color:var(--mut); }}
+  .dlg-actions button.primary {{ background:var(--acc); color:var(--bg); border-color:var(--acc); font-weight:600; }}
+  .dlg-actions button:disabled {{ opacity:.5; cursor:progress; }}
+  #variantDlg.busy .dlg-err {{ color:var(--mut); }}
+
   /* ---------- navigator (left sidebar): the outline's levels as a descending tree ---------- */
   :root {{ --navw:264px; --hdr-h:52px; }}
   #navBtn {{ --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Cpath d='M9 3v18'/%3E%3C/svg%3E"); }}
@@ -692,6 +791,10 @@ PAGE = """<!DOCTYPE html>
             text-align:left; padding:3px 4px; font:inherit; color:var(--ink);
             white-space:nowrap; overflow:hidden; text-overflow:ellipsis; border-radius:4px; }}
   .nlabel.nh1, .nlabel.nh2 {{ font-weight:600; }}
+  /* the skeleton's variants share the outline's top level, each drawn as a
+     full tree; the open document's title row is tinted, a suffix names a variant */
+  #nav > ul > li.here > .nrow {{ background:var(--chip); }}
+  .nsuffix {{ color:var(--mut); font-weight:500; }}
   .nlabel.npara {{ color:var(--mut); }}
   .ncaret:focus-visible, .nlabel:focus-visible {{ outline:2px solid var(--acc); outline-offset:-2px; }}
   .nnum {{ font:600 10.5px var(--sans); font-variant-numeric:tabular-nums; margin-right:6px; }}
@@ -752,14 +855,46 @@ PAGE = """<!DOCTYPE html>
 </aside>
 <nav id="nav" aria-label="navigator"><div class="nav-title">Navigator</div><ul id="navTree"></ul></nav>
 <main>
+<div id="genBanner" hidden>
+  <div class="gen-head"><span class="gen-dot"></span><strong id="genTitle">Writing this variant…</strong>
+    <span id="genCount" class="gen-count"></span></div>
+  <div id="genSub" class="gen-sub"></div>
+  <div class="gen-bar"><span></span></div>
+  <div id="genErr" class="gen-err" hidden></div>
+</div>
+<div class="main-tools">
+  <button id="variantBtn" type="button" title="generate a variant of this skeleton as a new file">New skeleton variant</button>
+</div>
+<div class="dtabs" id="docTabs" role="tablist" aria-label="the skeleton and its variants"></div>
 <ul id="tree">{tree}</ul>
 <textarea id="mdview" spellcheck="false"></textarea>
 </main>
+<dialog id="variantDlg" aria-labelledby="variantTitle">
+  <h2 id="variantTitle">Generate a skeleton variant</h2>
+  <p class="dlg-sub">The model rebuilds this skeleton at the level you are viewing — same facts, same
+    placeholders — following your instruction. Only the headings down to this level are generated; deeper
+    levels are developed later. The result is saved as a new file beside this one and opened; this skeleton
+    is not changed.</p>
+  <textarea id="variantPrompt" rows="5" spellcheck="true" placeholder="{default_instruction}"></textarea>
+  <p class="dlg-hint">Leave the box empty to use the example above.</p>
+  <p class="dlg-err" id="variantErr" role="alert"></p>
+  <div class="dlg-actions">
+    <button type="button" id="variantCancel">Cancel</button>
+    <span class="dlg-spacer"></span>
+    <button type="button" id="variantDefault" title="generate with the example instruction">Use default settings</button>
+    <button type="button" id="variantGo" class="primary">Generate</button>
+  </div>
+</dialog>
 <div id="insertHint"><button class="plus" type="button" title="insert bullet" aria-label="insert bullet">+</button></div>
 <script>
   const EDITABLE = {editable};
   const FILEHASH = "{filehash}";
   const SOURCE = {source_js};
+  const DOC = {doc_js};                        // the family member this page edits
+  const DOCS = {docs_json};                    // the skeleton and its variants
+  const FAMILY = {family_json};                // the family's level shape: {{h, para}} or null
+  const DEFAULT_INSTRUCTION = {default_instruction_js};
+  const GENERATING = {generating_json};        // set on the page of a variant still being written
   const SCHEME = "{scheme}";
   const ORPHANS = {orphans};
   const DRAFT_ORPHANS = {draft_orphans};   // written text whose paragraph is gone — sent back on save, kept in the draft
@@ -803,6 +938,7 @@ PAGE = """<!DOCTYPE html>
   const levelBar = document.getElementById('levels');
   const LEVEL_KEY = 'multilevel-editor.level:' + SOURCE;
   let level = 0;                               // 0 = everything; N = levels 1..N only
+  let activeLevel = 0;                         // the mode on screen (a variant is generated at this level)
 
   // ---- navigator: the outline as a descending tree in the left sidebar ----
   // Follows the level switch like a walk down a directory tree: in mode N
@@ -818,55 +954,103 @@ PAGE = """<!DOCTYPE html>
   const navBtn = document.getElementById('navBtn');
   const navOverride = new Map();               // outline li -> open? (manual caret toggles)
   let navCurrent = null;                       // outline li last jumped to
+  // every member of the family is drawn as a full tree; the open document's
+  // nodes point at outline rows, the others' at ?doc=<name>&at=<index>
+  function navNodesFromBullets(bullets, H) {{
+    const root = {{ indent: -1, kids: [] }};
+    const stack = [root];
+    let index = 0, num = 0;
+    bullets.forEach(b => {{
+      while (stack[stack.length - 1].indent >= b.indent) stack.pop();
+      const parent = stack[stack.length - 1];
+      const m = /^(#{{1,6}})\\s+/.exec(b.raw);
+      const h = m ? m[1].length : 0;
+      const parentHeading = parent === root || parent.h > 0;
+      const body = !h && !parentHeading;                       // written text: never listed
+      const node = {{ indent: b.indent, h, body, kids: [], index: index++,
+                     text: b.raw.replace(/^#{{1,6}}\\s+/, '').replace(/[*`]/g, ''),
+                     num: !h && parentHeading && !b.raw.startsWith('[') ? ++num : 0 }};
+      node.lvl = h || (H ? (body ? H + 2 : H + 1) : stack.length);
+      if (!body) parent.kids.push(node);
+      stack.push(node);
+    }});
+    return root.kids;
+  }}
+  function navNodesFromRows(rows, H) {{
+    const info = new Map(rows.map(r => [r.li, r]));
+    let index = 0;
+    const walk = ul => ul ? [...ul.children].flatMap(li => {{
+      const r = info.get(li);
+      if (!r) return [];
+      const i = index++;
+      if (H && r.body) return [];
+      const span = li.querySelector(':scope > .row .txt');
+      const numEl = li.querySelector(':scope > .row > .main > .pnum');
+      return [{{ li, h: r.h, lvl: r.lvl, index: i, kids: walk(li.querySelector(':scope > ul')),
+                text: span.dataset.raw.replace(/^#{{1,6}}\\s+/, '').replace(/[*`]/g, ''),
+                num: numEl ? numEl.textContent : 0 }}];
+    }}) : [];
+    return walk(tree);
+  }}
   function renderNav(rows, max, H) {{
     const active = level && level < max ? level : max;
-    const info = new Map(rows.map(r => [r.li, r]));
-    const listed = li => {{ const r = info.get(li); return r && !(H && r.body) ? r : null; }};
-    const kidsOf = ul => ul ? [...ul.children].map(listed).filter(Boolean) : [];
-    function build(r) {{
+    function build(node, doc) {{
       const item = document.createElement('li');
-      item.navLi = r.li;
+      item.navLi = node.li || null; item.navDoc = doc.name; item.navAt = node.index;
+      const key = node.li || doc.name + ':' + node.index;
       const row = document.createElement('div');
       row.className = 'nrow';
-      const kids = kidsOf(r.li.querySelector(':scope > ul'));
-      const lead = document.createElement(kids.length ? 'button' : 'span');
-      if (kids.length) {{ lead.type = 'button'; lead.className = 'ncaret'; lead.setAttribute('aria-label', 'toggle'); }}
+      const lead = document.createElement(node.kids.length ? 'button' : 'span');
+      if (node.kids.length) {{ lead.type = 'button'; lead.className = 'ncaret'; lead.setAttribute('aria-label', 'toggle'); }}
       else lead.className = 'nspace';
       const label = document.createElement('button');
       label.type = 'button';
-      label.className = 'nlabel ' + (r.h ? 'nh' + r.h : H ? 'npara' : 'nitem');
-      const text = r.li.querySelector(':scope > .row .txt').dataset.raw
-                     .replace(/^#{{1,6}}\\s+/, '').replace(/[*`]/g, '');
-      const num = r.li.querySelector(':scope > .row > .main > .pnum');
-      if (num) {{
+      label.className = 'nlabel ' + (node.h ? 'nh' + node.h : H ? 'npara' : 'nitem');
+      if (node.num) {{
         const n = document.createElement('span');
-        n.className = 'nnum'; n.textContent = num.textContent;
+        n.className = 'nnum'; n.textContent = node.num;
         label.append(n);
       }}
-      label.append(text || '…');
-      label.title = text;
+      label.append(node.text || '…');
+      label.title = node.text;
       row.append(lead, label);
       item.append(row);
-      if (kids.length) {{
-        // the level opens a node onto its children at or above the level
-        // (paragraphs straight under a ## stay out of a heading view); a
-        // manual caret expand shows every child
-        const manual = navOverride.get(r.li);
+      if (node.kids.length) {{
+        const manual = navOverride.get(key);
         item.classList.toggle('open', manual !== undefined ? manual
-          : r.lvl < active && kids.some(k => k.lvl <= active));
+          : node.lvl < active && node.kids.some(k => k.lvl <= active));
         const ul = document.createElement('ul');
-        kids.forEach(k => {{
-          const it = build(k);
+        node.kids.forEach(k => {{
+          const it = build(k, doc);
           it.classList.toggle('deep', manual !== true && k.lvl > active);
           ul.append(it);
         }});
         item.append(ul);
       }}
-      item.classList.toggle('current', r.li === navCurrent);
+      item.classList.toggle('current', !!node.li && node.li === navCurrent);
       return item;
     }}
+    const suffixed = (item, suffix) => {{
+      if (!item || !suffix) return;
+      const sfx = document.createElement('span');
+      sfx.className = 'nsuffix'; sfx.textContent = ' ' + suffix;
+      item.querySelector(':scope > .nrow > .nlabel').append(sfx);
+    }};
     const top = nav.scrollTop;
-    navTree.replaceChildren(...kidsOf(tree).map(build));
+    const items = [];
+    DOCS.forEach(doc => {{
+      const roots = doc.current ? navNodesFromRows(rows, H)
+                  : doc.pending ? [{{ text: doc.title, h: 1, lvl: 1, index: 0, kids: [], num: 0 }}]
+                  : navNodesFromBullets(doc.bullets || [], H);
+      const built = roots.map(n => build(n, doc));
+      if (built[0]) {{
+        suffixed(built[0], doc.suffix);
+        built[0].classList.toggle('here', !!doc.current);
+        built[0].querySelector(':scope > .nrow > .nlabel').title = doc.name;
+      }}
+      items.push(...built);
+    }});
+    navTree.replaceChildren(...items);
     nav.scrollTop = top;
   }}
   function revealBullet(li) {{
@@ -889,10 +1073,21 @@ PAGE = """<!DOCTYPE html>
     if (e.target.closest('.ncaret')) {{
       const open = !item.classList.contains('open');
       item.classList.toggle('open', open);
-      navOverride.set(item.navLi, open);
+      navOverride.set(item.navLi || item.navDoc + ':' + item.navAt, open);
       if (open) item.querySelectorAll(':scope > ul > li.deep').forEach(k => k.classList.remove('deep'));
-    }} else if (e.target.closest('.nlabel')) revealBullet(item.navLi);
+    }} else if (e.target.closest('.nlabel')) {{
+      if (item.navLi) revealBullet(item.navLi);
+      else location.href = '?doc=' + encodeURIComponent(item.navDoc) + '&at=' + item.navAt +
+                           '&level=' + activeLevel;              // another member: open it there, same level
+    }}
   }});
+  {{   // arrived from another member's tree: jump to the node that was clicked
+    const at = new URLSearchParams(location.search).get('at');
+    if (at !== null) {{
+      const li = [...tree.querySelectorAll('li')].filter(li => !li.classList.contains('pbody'))[+at];
+      if (li) setTimeout(() => revealBullet(li), 60);
+    }}
+  }}
   // open beside the text on wide screens (remembered), as an overlay on narrow ones
   const NAV_KEY = 'multilevel-editor.nav';
   const narrowNav = matchMedia('(max-width: 900px)');
@@ -938,6 +1133,10 @@ PAGE = """<!DOCTYPE html>
       if (!h) anyPara = true;
       rows.push({{ li, d, branch, h, body: isBody(li) }});
     }});
+    if (FAMILY) {{                             // a variant offers the same modes as its family
+      H = Math.max(H, FAMILY.h || 0);
+      anyPara = anyPara || !!FAMILY.para;
+    }}
     let max = 0;
     rows.forEach(r => {{
       r.lvl = r.h || (H ? (r.body ? H + 2 : H + 1) : r.d);
@@ -1013,6 +1212,8 @@ PAGE = """<!DOCTYPE html>
     rows.forEach(r => r.li.classList.toggle('lvcut', r.branch &&
       [...r.li.querySelector(':scope > ul').children].every(c => c.classList.contains('lvhide'))));
     const active = cut || max;
+    activeLevel = active;
+    document.body.classList.toggle('toplevel', active === min);   // the variant button lives on the top level only
     [...levelBar.children].forEach(b => b.classList.toggle('on', +b.dataset.level === active));
     renderNav(rows, max, H);
   }}
@@ -1023,7 +1224,9 @@ PAGE = """<!DOCTYPE html>
   {{
     let stored = null;
     try {{ stored = localStorage.getItem(LEVEL_KEY); }} catch {{}}
-    if (stored === 'all') showLevels(99, false);
+    const asked = parseInt(new URLSearchParams(location.search).get('level'), 10);   // arriving from another member
+    if (asked > 0) showLevels(asked, true);
+    else if (stored === 'all') showLevels(99, false);
     else if (parseInt(stored, 10) > 0) showLevels(parseInt(stored, 10), false);
     else syncLevels();
   }}
@@ -1450,7 +1653,7 @@ PAGE = """<!DOCTYPE html>
     try {{
       const r = await fetch('/generate', {{ method: 'POST',
         headers: {{'Content-Type': 'application/json'}},
-        body: JSON.stringify({{ outline: toMarkdown(serialize()), target: span.dataset.raw, path, existing }}) }});
+        body: JSON.stringify({{ doc: DOC, outline: toMarkdown(serialize()), target: span.dataset.raw, path, existing }}) }});
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || r.status);
       const text = (data.text || '').replace(/\\s+/g, ' ').trim();
@@ -1596,7 +1799,7 @@ PAGE = """<!DOCTYPE html>
     try {{
       const r = await fetch('/rewrite', {{ method: 'POST',
         headers: {{'Content-Type': 'application/json'}},
-        body: JSON.stringify({{ outline: toMarkdown(bullets), index, target: source, prompt,
+        body: JSON.stringify({{ doc: DOC, outline: toMarkdown(bullets), index, target: source, prompt,
                                 ...bulletKind(li) }}) }});
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || r.status);
@@ -1640,6 +1843,111 @@ PAGE = """<!DOCTYPE html>
       if (v && v.list.length > 1) {{ e.preventDefault(); showVersion(li, v.at + (e.key === 'ArrowLeft' ? -1 : 1)); return; }}
     }}
   }});
+
+  // ---- a variant being written: follow /variant/status and grow the tree live ----
+  if (GENERATING) {{
+    const banner = document.getElementById('genBanner');
+    banner.hidden = false;
+    document.getElementById('genSub').textContent =
+      'Variant ' + GENERATING.n + ' of ' + GENERATING.src + ' — ' + GENERATING.instruction;
+    const count = document.getElementById('genCount');
+    let shown = 0, lastKey = '';
+    const poll = async () => {{
+      try {{
+        const r = await fetch('/variant/status?name=' + encodeURIComponent(GENERATING.name));
+        const st = await r.json();
+        if (!r.ok) throw new Error(st.error || r.status);
+        const key = st.lines.length + ':' + st.chars;
+        if (st.lines.length && key !== lastKey) {{
+          lastKey = key;
+          buildTree(parseMarkdown(st.lines.join('\\n')));
+          showLevels(99, false);
+          [...tree.querySelectorAll('li')].slice(shown).forEach(li => li.classList.add('fresh'));
+          shown = st.lines.length;
+        }}
+        count.textContent = st.lines.length ? st.lines.length + ' bullets · ' + st.chars + ' characters' : 'waiting for the first words…';
+        if (st.status === 'done') {{
+          document.body.classList.add('gen-done');
+          document.getElementById('genTitle').textContent = 'Written — opening the file…';
+          setTimeout(() => location.reload(), 600);
+          return;
+        }}
+        if (st.status === 'error') {{
+          document.body.classList.add('gen-failed');
+          document.getElementById('genTitle').textContent = 'The variant could not be written';
+          const err = document.getElementById('genErr');
+          err.hidden = false;
+          err.innerHTML = esc(st.error || 'unknown error') + ' · <a href="?doc=' +
+            encodeURIComponent(GENERATING.src) + '">back to ' + esc(GENERATING.src) + '</a>';
+          return;
+        }}
+      }} catch (err) {{
+        count.textContent = 'lost contact with the server: ' + err.message;
+      }}
+      setTimeout(poll, 600);
+    }};
+    tree.querySelector('.txt.h1')?.classList.add('placeholder-title');
+    poll();
+  }}
+
+  // ---- document tabs: step through the skeleton and its variants ----
+  {{
+    const strip = document.getElementById('docTabs');
+    const at = DOCS.findIndex(d => d.current);
+    if (DOCS.length > 1) {{
+      const go = d => {{ location.href = '?doc=' + encodeURIComponent(d.name) + '&level=' + activeLevel; }};
+      const tabLabel = d => {{
+        const m = /\\.variant-(\\d+)\\.md$/.exec(d.name);
+        return d.pending ? 'v' + d.title.replace(/\\D+/g, '') + '…' : m ? 'v' + m[1] : 'Original';
+      }};
+      const b = (cls, label, title, extra = '') =>
+        '<button type="button" class="' + cls + '" title="' + esc(title) + '"' + extra + '>' + esc(label) + '</button>';
+      strip.innerHTML =
+        b('dnav', '‹', 'previous', at <= 0 ? ' disabled' : '') +
+        DOCS.map((d, i) => b('dtab' + (d.current ? ' on' : '') + (d.pending ? ' pending' : ''), tabLabel(d),
+                             d.title + (d.suffix ? ' ' + d.suffix : '') + ' — ' + d.name,
+                             ' role="tab" data-i="' + i + '" aria-selected="' + !!d.current + '"')).join('') +
+        b('dnav', '›', 'next', at >= DOCS.length - 1 ? ' disabled' : '');
+      strip.addEventListener('click', e => {{
+        const t = e.target.closest('button');
+        if (!t || t.disabled) return;
+        if (t.classList.contains('dnav')) go(DOCS[at + (t.textContent === '‹' ? -1 : 1)]);
+        else if (!t.classList.contains('on')) go(DOCS[+t.dataset.i]);
+      }});
+      document.body.classList.add('has-tabs');
+    }}
+  }}
+
+  // ---- skeleton variant: instruction dialog → /variant → open the new file ----
+  const variantDlg = document.getElementById('variantDlg');
+  const variantPrompt = document.getElementById('variantPrompt');
+  const variantErr = document.getElementById('variantErr');
+  document.getElementById('variantBtn').addEventListener('click', () => {{
+    if (dirty) {{ flash('save your changes first — a variant is built from the file on disk', 'error'); return; }}
+    variantErr.textContent = ''; variantDlg.classList.remove('busy');
+    variantDlg.showModal(); variantPrompt.focus();
+  }});
+  document.getElementById('variantCancel').addEventListener('click', () => variantDlg.close());
+  async function makeVariant(instruction) {{
+    const buttons = variantDlg.querySelectorAll('button');
+    buttons.forEach(b => b.disabled = true); variantDlg.classList.add('busy');
+    variantErr.textContent = 'starting…';
+    try {{
+      const r = await fetch('/variant', {{ method: 'POST', headers: {{'Content-Type': 'application/json'}},
+        body: JSON.stringify({{ doc: DOC, instruction, level: activeLevel }}) }});
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || r.status);
+      location.href = '?doc=' + encodeURIComponent(data.name) + '&level=' + activeLevel;   // the new page shows it being written, then opens at this level
+    }} catch (err) {{
+      variantDlg.classList.remove('busy');
+      variantErr.textContent = 'could not generate the variant: ' + err.message;
+      buttons.forEach(b => b.disabled = false);
+    }}
+  }}
+  document.getElementById('variantDefault').addEventListener('click', () => makeVariant(DEFAULT_INSTRUCTION));
+  document.getElementById('variantGo').addEventListener('click', () =>
+    makeVariant(variantPrompt.value.trim() || DEFAULT_INSTRUCTION));
+  variantDlg.addEventListener('cancel', e => {{ if (variantDlg.classList.contains('busy')) e.preventDefault(); }});
 
   // ---- delegated events (survive tree rebuilds) ----
   tree.addEventListener('click', e => {{
@@ -2009,7 +2317,7 @@ PAGE = """<!DOCTYPE html>
     try {{
       const r = await fetch('/save', {{ method: 'POST',
         headers: {{'Content-Type': 'application/json'}},
-        body: JSON.stringify({{ hash: FILEHASH, scheme: settings.scheme, bullets,
+        body: JSON.stringify({{ doc: DOC, hash: FILEHASH, scheme: settings.scheme, bullets,
                                 draft_orphans: DRAFT_ORPHANS }}) }});
       if (!r.ok) throw new Error((await r.json()).error || r.status);
       dirty = false;
@@ -2150,36 +2458,71 @@ def clean_rewrite(text: str, req: dict) -> str:
     return t
 
 
-def generate_text(prompt: str, model: str, cwd: Path) -> str:
-    """Ask the model for the paragraph. Backends, in order: the `anthropic`
-    SDK when it is installed and has credentials; otherwise the `claude` CLI
-    (Claude Code) on PATH, run tool-less and non-interactively."""
+def generate_text(prompt: str, model: str, cwd: Path, on_text=None) -> str:
+    """Ask the model and return its text. `on_text(accumulated)` is called as
+    the reply streams in. Backends, in order: the `anthropic` SDK when it is
+    installed and has credentials; otherwise the `claude` CLI (Claude Code) on
+    PATH, run tool-less and non-interactively with partial messages streamed."""
     try:
         import anthropic  # optional — the tool itself stays stdlib-only
     except ImportError:
         anthropic = None
     if anthropic is not None and (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
         client = anthropic.Anthropic()
-        resp = client.messages.create(
-            model=model, max_tokens=16000,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        if resp.stop_reason == "refusal":
+        parts = []
+        with client.messages.stream(model=model, max_tokens=32000,
+                                    messages=[{"role": "user", "content": prompt}]) as stream:
+            for chunk in stream.text_stream:
+                parts.append(chunk)
+                if on_text:
+                    on_text("".join(parts))
+            final = stream.get_final_message()
+        if final.stop_reason == "refusal":
             raise RuntimeError("the model declined this request")
-        return "".join(b.text for b in resp.content if b.type == "text")
+        return "".join(parts)
     cli = shutil.which("claude")
     if not cli:
         raise RuntimeError("no model backend: install the `claude` CLI, or `pip install anthropic` "
                            "and set ANTHROPIC_API_KEY")
     env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}   # allow nesting inside a session
-    proc = subprocess.run(
-        [cli, "-p", "--output-format", "text", "--model", model, "--tools", "",
-         "--no-session-persistence"],
-        input=prompt, capture_output=True, text=True, cwd=str(cwd), env=env, timeout=600,
+    proc = subprocess.Popen(
+        [cli, "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
+         "--model", model, "--tools", "", "--no-session-persistence"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, cwd=str(cwd), env=env,
     )
-    if proc.returncode != 0:
-        raise RuntimeError((proc.stderr or proc.stdout or "claude CLI failed").strip()[-400:])
-    return proc.stdout.strip()
+    proc.stdin.write(prompt)
+    proc.stdin.close()
+    parts, full, result_error = [], None, None
+    for line in proc.stdout:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            continue
+        kind = obj.get("type")
+        if kind == "stream_event":
+            ev = obj.get("event", {})
+            if ev.get("type") == "content_block_delta" and ev.get("delta", {}).get("type") == "text_delta":
+                parts.append(ev["delta"].get("text", ""))
+                if on_text:
+                    on_text("".join(parts))
+        elif kind == "assistant":
+            full = "".join(b.get("text", "") for b in obj.get("message", {}).get("content", [])
+                           if b.get("type") == "text") or full
+        elif kind == "result":
+            if obj.get("is_error"):
+                result_error = str(obj.get("result") or "claude CLI reported an error")
+            elif not parts and not full and obj.get("result"):
+                full = str(obj["result"])
+    proc.wait(timeout=600)
+    if result_error:
+        raise RuntimeError(result_error[-400:])
+    if proc.returncode != 0 and not (parts or full):
+        raise RuntimeError((proc.stderr.read() or "claude CLI failed").strip()[-400:])
+    return ("".join(parts) if parts else (full or "")).strip()
 
 
 # ---------- the draft: written paragraphs live beside the outline, not in it ----------
@@ -2258,6 +2601,178 @@ def write_draft(source: Path, draft_lines, orphans: dict) -> None:
     draft_path(source).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+# ---------- skeleton variants: sibling files, each with its own draft ----------
+# A variant of the skeleton X.md is X.variant-N.md beside it (its tags and
+# draft follow the same rule: X.variant-N.tags.yaml, X.variant-N.draft.md).
+# The server is started on the base skeleton and serves the whole family;
+# the navigator lists the family as its top level and `?doc=<name>` opens a
+# member. A variant is produced by the model from the skeleton on disk plus
+# an instruction, validated as an outline, and written with frontmatter that
+# records its provenance and the instruction used.
+VARIANT_RE = re.compile(r"\.variant-(\d+)\.md$")
+DEFAULT_VARIANT_INSTRUCTION = (
+    "Rebuild the skeleton in a different legal argumentation style: lead with the strongest "
+    "point, organise the sections by the rule each breach engages rather than by chronology, "
+    "and make every paragraph's topic sentence a single assertion a reader could accept on its own. "
+    "Keep every fact and every [cite] placeholder."
+)
+VARIANT_SCOPE = """
+SCOPE — ONLY THE TOP {level} LEVEL(S)
+The variant was requested at the level of the {hashes} headings. Output ONLY
+the heading bullets down to that level: the # title and the headings marked
+with up to {level} hash marks. Do not output paragraphs or deeper headings —
+they will be developed later under your new structure. Every deeper point of
+the original must still have an obvious home under one of your headings; a
+heading may end with a short lead sentence, as the original's headings do,
+saying what will be argued there.
+"""
+VARIANT_PROMPT = """You are producing a VARIANT of a document skeleton (a reverse outline).
+
+A skeleton is a nested bullet list: '- ' bullets, two spaces of indentation per
+level; heading bullets start with #, ## or ###; the bullets under a heading are
+the paragraphs, each given as its topic sentence; a bracketed bullet such as
+[parties block: ...] is a placeholder and stays as it is.
+
+INSTRUCTION FOR THE VARIANT
+{instruction}
+{scope}
+RULES
+- Same subject, same facts, same evidence, same language as the original. Use
+  only what the skeleton states; keep every bracketed placeholder such as
+  [cite] with the sentence it belongs to; invent nothing.
+- Every paragraph of the original keeps a counterpart, merged or split as the
+  instruction requires; never drop content silently.
+- Output the COMPLETE variant skeleton in exactly the original format, with
+  the single top-level # title bullet (rephrasing allowed). No written text
+  under paragraphs, no numbering labels.
+- Reply with the bullet list only: no preamble, no code fence, no commentary.
+
+ORIGINAL SKELETON
+{skeleton}
+"""
+
+
+def deepest_heading(skeleton: str) -> int:
+    return max((len(m.group(1)) for m in re.finditer(r"^\s*- (#{1,6})\s", skeleton, re.M)), default=0)
+
+
+def scope_for(level, skeleton: str) -> tuple:
+    """(scope paragraph for the prompt, max heading level to keep) — a level
+    at or below the deepest heading restricts the variant to headings down to
+    that level; the paragraph level and below mean the whole skeleton."""
+    H = deepest_heading(skeleton)
+    try:
+        level = int(level or 0)
+    except (TypeError, ValueError):
+        level = 0
+    if not level or not H or level > H:
+        return "", 0
+    return VARIANT_SCOPE.format(level=level, hashes="#" * level), level
+
+
+def restrict_levels(lines, max_heading: int):
+    """Keep only heading bullets of at most `max_heading` hashes; the model
+    is told the same, this makes it certain."""
+    if not max_heading:
+        return list(lines)
+    kept = []
+    for line in lines:
+        m = re.match(r"^(\s*)- (#{1,6})\s", line)
+        if m and len(m.group(2)) <= max_heading:
+            kept.append(line)
+    return kept
+
+
+def strip_frontmatter(text: str) -> str:
+    lines = text.splitlines()
+    if lines and lines[0].strip() == "---":
+        for i in range(1, len(lines)):
+            if lines[i].strip() == "---":
+                return "\n".join(lines[i + 1:]).strip("\n")
+    return text
+
+
+def read_frontmatter(text: str) -> dict:
+    """Flat 'key: value' lines of the frontmatter (block scalars skipped)."""
+    fm = {}
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return fm
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        m = re.match(r"^([A-Za-z_][\w-]*):\s*(.*)$", line)
+        if m and m.group(2).strip() not in ("", "|", ">"):
+            fm[m.group(1)] = m.group(2).strip()
+    return fm
+
+
+def family_of(base: Path):
+    """The base skeleton and its variants, in variant order."""
+    pat = re.compile(r"^" + re.escape(base.stem) + r"\.variant-(\d+)\.md$")
+    found = []
+    for p in base.parent.iterdir():
+        m = pat.match(p.name)
+        if m:
+            found.append((int(m.group(1)), p))
+    return [base] + [p for _, p in sorted(found)]
+
+
+def doc_label(p: Path, base: Path) -> str:
+    fm = read_frontmatter(p.read_text(encoding="utf-8"))
+    if fm.get("title"):
+        return fm["title"]
+    m = VARIANT_RE.search(p.name)
+    return f"Variant {m.group(1)}" if m else base.stem
+
+
+def parse_variant_reply(text: str, strict: bool = True):
+    """Keep the bullet lines of the model's reply, normalise indentation to
+    two spaces per level, and (strict) insist on an outline that starts with
+    a heading. Lenient mode serves the live view while the reply streams."""
+    raw = []
+    for line in text.splitlines():
+        if line.strip().startswith("```"):
+            continue
+        m = re.match(r"^(\s*)[-*] (.+)$", line.rstrip())
+        if m:
+            raw.append((len(m.group(1).replace("\t", "    ")), m.group(2).strip()))
+        elif raw and line.strip() and not line.lstrip().startswith(("-", "*")):
+            raw[-1] = (raw[-1][0], raw[-1][1] + " " + line.strip())   # continuation line
+    if not raw:
+        if strict:
+            raise RuntimeError("the model returned no bullets")
+        return []
+    levels = {ind: i for i, ind in enumerate(sorted({ind for ind, _ in raw}))}
+    lines = ["  " * levels[ind] + "- " + txt for ind, txt in raw]
+    if strict:
+        tree = parse_outline("\n".join(lines))
+        if not tree or not is_heading_raw(tree[0]["raw"]):
+            raise RuntimeError("the model did not return a skeleton (it must start with a # heading bullet)")
+    return lines
+
+
+def variant_path(base: Path, n: int) -> Path:
+    return base.with_name(f"{base.stem}.variant-{n}.md")
+
+
+def write_variant(base: Path, derived_from: Path, instruction: str, lines, n: int, level: int = 0) -> Path:
+    path = variant_path(base, n)
+    short = re.sub(r"\s+", " ", instruction).strip()
+    fm = ["---",
+          f"summary: Skeleton variant {n} of {base.name} — {short[:140]}",
+          f"variant_of: {derived_from.name}",
+          f"variant: {n}",
+          f"title: Variant {n}",
+          f"level: {level or 'all'}",
+          "prompt: |"] + ["  " + l for l in instruction.strip().splitlines()] + [
+          f"created: {date.today().isoformat()}",
+          "status: draft",
+          "---", ""]
+    path.write_text("\n".join(fm + list(lines)) + "\n", encoding="utf-8")
+    return path
+
+
 def combined_hash(source: Path) -> str:
     """Conflict guard spans the outline AND its sidecars (tags, draft)."""
     parts = [source.read_text(encoding="utf-8")]
@@ -2266,7 +2781,59 @@ def combined_hash(source: Path) -> str:
     return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()
 
 
-def build_page(source: Path, editable: bool) -> str:
+def doc_title(p: Path) -> str:
+    """The outline's own title: its first bullet, heading marks stripped."""
+    for line in strip_frontmatter(p.read_text(encoding="utf-8")).splitlines():
+        m = BULLET_RE.match(line)
+        if m:
+            return re.sub(r"^#{1,6}\s+", "", m.group(2).strip()).replace("*", "") or p.stem
+    return p.stem
+
+
+def family_levels(base: Path) -> dict:
+    """The level shape shared by the whole family, so a variant that holds
+    only headings still offers the base's modes (counts, paragraphs, text)."""
+    H, para = 0, False
+    for p in family_of(base):
+        body = strip_frontmatter(p.read_text(encoding="utf-8"))
+        H = max(H, deepest_heading(body))
+        if re.search(r"^\s*- (?!#)", body, re.M):
+            para = True
+    return {"h": H, "para": para}
+
+
+def family_docs(base: Path, current: str, jobs=None):
+    """The skeleton and its variants as the navigator lists them: each by its
+    own title, variants with a suffix — all on the outline's top level."""
+    docs = []
+    for p in family_of(base):
+        m = VARIANT_RE.search(p.name)
+        bullets = []
+        if p.name != current:                 # the navigator draws the others' trees from this
+
+            def flat(nodes):
+                for n in nodes:
+                    bullets.append({"indent": n["indent"], "raw": split_tag(n["raw"])[0].strip()})
+                    flat(n["children"])
+
+            flat(parse_outline(p.read_text(encoding="utf-8")))
+        docs.append({"name": p.name, "label": doc_label(p, base), "title": doc_title(p),
+                     "suffix": f"(variant {m.group(1)})" if m else "",
+                     "current": p.name == current, "pending": False, "bullets": bullets})
+    names = {d["name"] for d in docs}
+    for name, job in (jobs or {}).items():
+        if name not in names and job.status != "done":
+            docs.append({"name": name, "label": f"Variant {job.n} (generating…)",
+                         "title": f"Variant {job.n}", "suffix": "(generating…)",
+                         "current": name == current, "pending": True})
+    return docs
+
+
+def build_page(source: Path, editable: bool, base: Path = None, docs=None) -> str:
+    base = base or source
+    if docs is None:
+        docs = family_docs(base, source.name) if editable else [
+            {"name": source.name, "label": source.stem, "current": True, "pending": False}]
     text = source.read_text(encoding="utf-8")
     meta = load_meta(source)
     tree = parse_outline(text)
@@ -2300,8 +2867,14 @@ def build_page(source: Path, editable: bool) -> str:
     assign_numbers(tree)
     body = "\n".join(render_node(n) for n in tree)
     return PAGE.format(
-        title=source.stem,
+        title=doc_label(source, base) if source != base else source.stem,
         source=source.name,
+        doc_js=json.dumps(source.name),
+        docs_json=json.dumps(docs),
+        family_json=json.dumps(family_levels(base) if editable else None),
+        generating_json="null",
+        default_instruction=html.escape(DEFAULT_VARIANT_INSTRUCTION, quote=True),
+        default_instruction_js=json.dumps(DEFAULT_VARIANT_INSTRUCTION),
         source_js=json.dumps(source.name),
         tree=body,
         editable="true" if editable else "false",
@@ -2317,7 +2890,94 @@ def build_page(source: Path, editable: bool) -> str:
     )
 
 
+def build_generating_page(job, base: Path, docs) -> str:
+    """The page for a variant that is still being written: read-only, a
+    banner, and a tree the page fills in live from /variant/status."""
+    placeholder = {"indent": 0, "raw": f"# Variant {job.n} — being written…", "tag": None, "children": [], "num": None}
+    return PAGE.format(
+        title=f"Variant {job.n}",
+        source=job.name,
+        doc_js=json.dumps(job.name),
+        docs_json=json.dumps(docs),
+        family_json=json.dumps(family_levels(base)),
+        generating_json=json.dumps({"name": job.name, "n": job.n, "src": job.src.name,
+                                    "instruction": job.instruction}),
+        source_js=json.dumps(job.name),
+        tree=render_node(placeholder),
+        editable="false",
+        bodycls="readonly generating",
+        dark_vars=DARK_VARS,
+        filehash="",
+        scheme="creac",
+        orphans=0,
+        draft_orphans="{}",
+        draft_name=json.dumps(""),
+        default_instruction=html.escape(DEFAULT_VARIANT_INSTRUCTION, quote=True),
+        default_instruction_js=json.dumps(DEFAULT_VARIANT_INSTRUCTION),
+        hint="",
+    )
+
+
+class VariantJob:
+    """One variant being generated in the background."""
+
+    def __init__(self, name, n, src, instruction, level=0):
+        self.name, self.n, self.src, self.instruction, self.level = name, n, src, instruction, level
+        self.status, self.text, self.error = "running", "", None
+
+    def snapshot(self):
+        complete = self.text.rsplit("\n", 1)[0] if "\n" in self.text else ""
+        return {"status": self.status, "n": self.n, "src": self.src.name, "instruction": self.instruction,
+                "lines": restrict_levels(parse_variant_reply(complete, strict=False), self.level),
+                "chars": len(self.text), "error": self.error}
+
+
 def serve(source: Path, port: int, open_browser: bool = True, model: str = "claude-opus-5"):
+    base = source
+    jobs = {}                    # variant name -> VariantJob (running, done, or failed)
+    jobs_lock = threading.Lock()
+
+    def start_variant(src: Path, instruction: str, level) -> VariantJob:
+        skeleton = strip_frontmatter(src.read_text(encoding="utf-8"))
+        scope, max_heading = scope_for(level, skeleton)
+        with jobs_lock:
+            taken = [int(VARIANT_RE.search(p.name).group(1)) for p in family_of(base)[1:]]
+            taken += [j.n for j in jobs.values()]
+            n = 1 + max(taken or [0])
+            job = VariantJob(variant_path(base, n).name, n, src, instruction, max_heading)
+            jobs[job.name] = job
+
+        def run():
+            try:
+                prompt = VARIANT_PROMPT.format(instruction=instruction, skeleton=skeleton, scope=scope)
+
+                def on_text(t):
+                    job.text = t
+
+                reply = generate_text(prompt, model, src.parent, on_text=on_text)
+                job.text = reply
+                lines = restrict_levels(parse_variant_reply(reply), max_heading)
+                if not lines:
+                    raise RuntimeError("the model returned no headings at the requested level")
+                write_variant(base, src, instruction, lines, n, max_heading)
+                job.status = "done"
+                print(f"  variant: {job.name} from {src.name}", flush=True)
+            except Exception as e:  # noqa: BLE001 — surfaced to the page via /variant/status
+                job.status, job.error = "error", str(e)
+                print(f"  variant failed: {job.name}: {e}", flush=True)
+
+        threading.Thread(target=run, daemon=True).start()
+        return job
+
+    def resolve(name):
+        """A member of the family by file name — never an arbitrary path."""
+        if not name:
+            return base
+        for p in family_of(base):
+            if p.name == name:
+                return p
+        raise FileNotFoundError(f"{name} is not the skeleton or one of its variants")
+
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code, body, ctype="text/html; charset=utf-8"):
             data = body.encode("utf-8")
@@ -2328,15 +2988,48 @@ def serve(source: Path, port: int, open_browser: bool = True, model: str = "clau
             self.wfile.write(data)
 
         def do_GET(self):
-            if self.path in ("/", "/index.html"):
-                self._send(200, build_page(source, editable=True))
+            url = urlparse(self.path)
+            q = parse_qs(url.query)
+            if url.path == "/variant/status":
+                job = jobs.get(q.get("name", [""])[0])
+                if not job:
+                    self._send(404, json.dumps({"error": "no such generation"}), "application/json")
+                    return
+                self._send(200, json.dumps(job.snapshot()), "application/json")
+                return
+            if url.path in ("/", "/index.html"):
+                name = q.get("doc", [""])[0]
+                try:
+                    doc = resolve(name)
+                except FileNotFoundError as e:
+                    job = jobs.get(name)
+                    if job and job.status != "done":
+                        self._send(200, build_generating_page(job, base, family_docs(base, name, jobs)))
+                        return
+                    self._send(404, str(e), "text/plain")
+                    return
+                self._send(200, build_page(doc, editable=True, base=base, docs=family_docs(base, doc.name, jobs)))
             else:
                 self._send(404, "not found", "text/plain")
 
         def do_POST(self):
+            if self.path == "/variant":
+                # starts the generation in the background and answers at once
+                # with the new file's name; the page navigates there and
+                # follows /variant/status while the model writes
+                try:
+                    req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                    src = resolve(req.get("doc"))
+                    instruction = (req.get("instruction") or "").strip() or DEFAULT_VARIANT_INSTRUCTION
+                    job = start_variant(src, instruction, req.get("level"))
+                    self._send(200, json.dumps({"name": job.name}), "application/json")
+                except Exception as e:  # noqa: BLE001 — report any failure to the client
+                    self._send(500, json.dumps({"error": str(e)}), "application/json")
+                return
             if self.path == "/generate":
                 try:
                     req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                    source = resolve(req.get("doc"))
                     text = generate_text(build_generate_prompt(req), model, source.parent)
                     self._send(200, json.dumps({"text": text}), "application/json")
                     print(f"  wrote: {req.get('target', '')[:60]!r} ({len(text)} chars)")
@@ -2348,6 +3041,7 @@ def serve(source: Path, port: int, open_browser: bool = True, model: str = "clau
                     req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                     if not req.get("prompt", "").strip():
                         raise ValueError("empty prompt")
+                    source = resolve(req.get("doc"))
                     text = clean_rewrite(generate_text(build_rewrite_prompt(req), model, source.parent), req)
                     self._send(200, json.dumps({"text": text}), "application/json")
                     print(f"  rewrote: {req.get('target', '')[:50]!r} per {req.get('prompt', '')[:40]!r}", flush=True)
@@ -2359,6 +3053,7 @@ def serve(source: Path, port: int, open_browser: bool = True, model: str = "clau
                 return
             try:
                 req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                source = resolve(req.get("doc"))
                 if combined_hash(source) != req["hash"]:
                     self._send(409, json.dumps(
                         {"error": "file changed on disk — refresh the page (your staged edits will be lost)"}),

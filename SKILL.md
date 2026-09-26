@@ -73,6 +73,30 @@ warning. Save serializes the whole outline from the page and rewrites the
   outline's content and keeps `[cite]`-style placeholders, then inserts it as
   written text under the paragraph (staged, ⌘Z undoes, Save writes; earlier
   written text stays below). The view jumps to the written level.
+- **Skeleton variants.** The "Skeleton variant…" button (top right of the
+  text) opens a dialog: an instruction box with an example (a different
+  legal argumentation style), **Use default settings** runs the example,
+  **Generate** runs the typed instruction. The request carries the active
+  level: at a heading level the prompt's SCOPE section restricts the output
+  to headings down to that level and the server enforces it (`restrict_levels`),
+  recorded as `level:` in the frontmatter; at the paragraph level or below the
+  whole skeleton is rewritten. `POST /variant` reserves the next
+  variant number, starts the generation in a background thread and answers at
+  once; the page navigates to `?doc=<name>` where a read-only "being written"
+  page polls `GET /variant/status?name=` (≈0.6 s) and rebuilds the tree from
+  the streamed reply (the CLI runs with `--output-format stream-json
+  --include-partial-messages`; the SDK path uses `messages.stream`), with a
+  banner, a progress bar and fade-in for arriving bullets; when the job is
+  done the file `<outline>.variant-N.md` exists (frontmatter: summary,
+  variant_of, variant, title, prompt, created, status: draft) and the page
+  reloads onto it; a failure shows the error with a link back. Variants are full skeletons with their own draft and tags.
+  In the navigator the family shares the outline's top level: every member
+  is drawn as a full tree (the others' outlines travel with the page as
+  `bullets`), the open one tinted, variants suffixed "(variant N)"; a node
+  of another member opens it at that node (`?doc=<name>&at=<index>`). A
+  tab strip above the outline (`#docTabs`: Original / Variant N, ‹ ›)
+  switches members at any level, carrying `?level=`. Start the server on the base skeleton; it serves
+  the family and refuses any other path. Unsaved edits block generation.
 - **Drag to move**: a grip (`⋮⋮`) appears left of a bullet on hover; dragging
   it moves the bullet **with its whole subtree** (indicator line shows the
   before/after drop position; the bullet adopts the target's indent). Chips
