@@ -66,7 +66,11 @@ warning. Save serializes the whole outline from the page and rewrites the
 - **Skeleton variants.** The "Skeleton variant…" button (top right of the
   text) opens a dialog: an instruction box with an example (a different
   legal argumentation style), **Use default settings** runs the example,
-  **Generate** runs the typed instruction. `POST /variant` reserves the next
+  **Generate** runs the typed instruction. The request carries the active
+  level: at a heading level the prompt's SCOPE section restricts the output
+  to headings down to that level and the server enforces it (`restrict_levels`),
+  recorded as `level:` in the frontmatter; at the paragraph level or below the
+  whole skeleton is rewritten. `POST /variant` reserves the next
   variant number, starts the generation in a background thread and answers at
   once; the page navigates to `?doc=<name>` where a read-only "being written"
   page polls `GET /variant/status?name=` (≈0.6 s) and rebuilds the tree from

@@ -144,8 +144,11 @@ back to the `.md` only when you press **Save**.
   variant…" opens a small dialog: type an instruction (the example in the
   box, e.g. rebuilding the argument in a different legal argumentation
   style, is what **Use default settings** runs) and **Generate**. The model
-  rewrites the whole skeleton on disk to that instruction — same facts, same
-  placeholders, same language. The page moves to the new document at once
+  rewrites the skeleton on disk to that instruction — same facts, same
+  placeholders, same language — **at the level you are viewing**: invoked on
+  the section level, the variant holds only the title and section headings
+  (deeper levels are developed later under the new structure); invoked at
+  the paragraph level it is the whole skeleton. The page moves to the new document at once
   and **shows it being written**: a banner with a pulse and a sliding bar,
   the outline filling in bullet by bullet as the model's reply streams in
   (via the `claude` CLI's partial messages or the SDK's text stream), then a

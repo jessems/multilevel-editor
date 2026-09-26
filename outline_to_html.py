@@ -686,8 +686,10 @@ PAGE = """<!DOCTYPE html>
 </main>
 <dialog id="variantDlg" aria-labelledby="variantTitle">
   <h2 id="variantTitle">Generate a skeleton variant</h2>
-  <p class="dlg-sub">The model rebuilds this skeleton — same facts, same placeholders — following your
-    instruction. The result is saved as a new file beside this one and opened; this skeleton is not changed.</p>
+  <p class="dlg-sub">The model rebuilds this skeleton at the level you are viewing — same facts, same
+    placeholders — following your instruction. Only the headings down to this level are generated; deeper
+    levels are developed later. The result is saved as a new file beside this one and opened; this skeleton
+    is not changed.</p>
   <textarea id="variantPrompt" rows="5" spellcheck="true" placeholder="{default_instruction}"></textarea>
   <p class="dlg-hint">Leave the box empty to use the example above.</p>
   <p class="dlg-err" id="variantErr" role="alert"></p>
@@ -736,6 +738,7 @@ PAGE = """<!DOCTYPE html>
   const levelBar = document.getElementById('levels');
   const LEVEL_KEY = 'multilevel-editor.level:' + SOURCE;
   let level = 0;                               // 0 = everything; N = levels 1..N only
+  let activeLevel = 0;                         // the mode on screen (a variant is generated at this level)
 
   // ---- navigator: the outline as a descending tree in the left sidebar ----
   // Follows the level switch like a walk down a directory tree: in mode N
@@ -963,6 +966,7 @@ PAGE = """<!DOCTYPE html>
     rows.forEach(r => r.li.classList.toggle('lvcut', r.branch &&
       [...r.li.querySelector(':scope > ul').children].every(c => c.classList.contains('lvhide'))));
     const active = cut || max;
+    activeLevel = active;
     document.body.classList.toggle('toplevel', active === min);   // the variant button lives on the top level only
     [...levelBar.children].forEach(b => b.classList.toggle('on', +b.dataset.level === active));
     renderNav(rows, max, H);
@@ -1453,7 +1457,7 @@ PAGE = """<!DOCTYPE html>
     variantErr.textContent = 'starting…';
     try {{
       const r = await fetch('/variant', {{ method: 'POST', headers: {{'Content-Type': 'application/json'}},
-        body: JSON.stringify({{ doc: DOC, instruction }}) }});
+        body: JSON.stringify({{ doc: DOC, instruction, level: activeLevel }}) }});
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || r.status);
       location.href = '?doc=' + encodeURIComponent(data.name);   // the new page shows it being written
@@ -2029,6 +2033,16 @@ DEFAULT_VARIANT_INSTRUCTION = (
     "and make every paragraph's topic sentence a single assertion a reader could accept on its own. "
     "Keep every fact and every [cite] placeholder."
 )
+VARIANT_SCOPE = """
+SCOPE — ONLY THE TOP {level} LEVEL(S)
+The variant was requested at the level of the {hashes} headings. Output ONLY
+the heading bullets down to that level: the # title and the headings marked
+with up to {level} hash marks. Do not output paragraphs or deeper headings —
+they will be developed later under your new structure. Every deeper point of
+the original must still have an obvious home under one of your headings; a
+heading may end with a short lead sentence, as the original's headings do,
+saying what will be argued there.
+"""
 VARIANT_PROMPT = """You are producing a VARIANT of a document skeleton (a reverse outline).
 
 A skeleton is a nested bullet list: '- ' bullets, two spaces of indentation per
@@ -2038,7 +2052,7 @@ the paragraphs, each given as its topic sentence; a bracketed bullet such as
 
 INSTRUCTION FOR THE VARIANT
 {instruction}
-
+{scope}
 RULES
 - Same subject, same facts, same evidence, same language as the original. Use
   only what the skeleton states; keep every bracketed placeholder such as
@@ -2053,6 +2067,37 @@ RULES
 ORIGINAL SKELETON
 {skeleton}
 """
+
+
+def deepest_heading(skeleton: str) -> int:
+    return max((len(m.group(1)) for m in re.finditer(r"^\s*- (#{1,6})\s", skeleton, re.M)), default=0)
+
+
+def scope_for(level, skeleton: str) -> tuple:
+    """(scope paragraph for the prompt, max heading level to keep) — a level
+    at or below the deepest heading restricts the variant to headings down to
+    that level; the paragraph level and below mean the whole skeleton."""
+    H = deepest_heading(skeleton)
+    try:
+        level = int(level or 0)
+    except (TypeError, ValueError):
+        level = 0
+    if not level or not H or level > H:
+        return "", 0
+    return VARIANT_SCOPE.format(level=level, hashes="#" * level), level
+
+
+def restrict_levels(lines, max_heading: int):
+    """Keep only heading bullets of at most `max_heading` hashes; the model
+    is told the same, this makes it certain."""
+    if not max_heading:
+        return list(lines)
+    kept = []
+    for line in lines:
+        m = re.match(r"^(\s*)- (#{1,6})\s", line)
+        if m and len(m.group(2)) <= max_heading:
+            kept.append(line)
+    return kept
 
 
 def strip_frontmatter(text: str) -> str:
@@ -2128,7 +2173,7 @@ def variant_path(base: Path, n: int) -> Path:
     return base.with_name(f"{base.stem}.variant-{n}.md")
 
 
-def write_variant(base: Path, derived_from: Path, instruction: str, lines, n: int) -> Path:
+def write_variant(base: Path, derived_from: Path, instruction: str, lines, n: int, level: int = 0) -> Path:
     path = variant_path(base, n)
     short = re.sub(r"\s+", " ", instruction).strip()
     fm = ["---",
@@ -2136,6 +2181,7 @@ def write_variant(base: Path, derived_from: Path, instruction: str, lines, n: in
           f"variant_of: {derived_from.name}",
           f"variant: {n}",
           f"title: Variant {n}",
+          f"level: {level or 'all'}",
           "prompt: |"] + ["  " + l for l in instruction.strip().splitlines()] + [
           f"created: {date.today().isoformat()}",
           "status: draft",
@@ -2251,15 +2297,15 @@ def build_generating_page(job, base: Path, docs) -> str:
 class VariantJob:
     """One variant being generated in the background."""
 
-    def __init__(self, name, n, src, instruction):
-        self.name, self.n, self.src, self.instruction = name, n, src, instruction
+    def __init__(self, name, n, src, instruction, level=0):
+        self.name, self.n, self.src, self.instruction, self.level = name, n, src, instruction, level
         self.status, self.text, self.error = "running", "", None
 
     def snapshot(self):
         complete = self.text.rsplit("\n", 1)[0] if "\n" in self.text else ""
         return {"status": self.status, "n": self.n, "src": self.src.name, "instruction": self.instruction,
-                "lines": parse_variant_reply(complete, strict=False), "chars": len(self.text),
-                "error": self.error}
+                "lines": restrict_levels(parse_variant_reply(complete, strict=False), self.level),
+                "chars": len(self.text), "error": self.error}
 
 
 def serve(source: Path, port: int, open_browser: bool = True, model: str = "claude-opus-5"):
@@ -2267,25 +2313,29 @@ def serve(source: Path, port: int, open_browser: bool = True, model: str = "clau
     jobs = {}                    # variant name -> VariantJob (running, done, or failed)
     jobs_lock = threading.Lock()
 
-    def start_variant(src: Path, instruction: str) -> VariantJob:
+    def start_variant(src: Path, instruction: str, level) -> VariantJob:
+        skeleton = strip_frontmatter(src.read_text(encoding="utf-8"))
+        scope, max_heading = scope_for(level, skeleton)
         with jobs_lock:
             taken = [int(VARIANT_RE.search(p.name).group(1)) for p in family_of(base)[1:]]
             taken += [j.n for j in jobs.values()]
             n = 1 + max(taken or [0])
-            job = VariantJob(variant_path(base, n).name, n, src, instruction)
+            job = VariantJob(variant_path(base, n).name, n, src, instruction, max_heading)
             jobs[job.name] = job
 
         def run():
             try:
-                skeleton = strip_frontmatter(src.read_text(encoding="utf-8"))
-                prompt = VARIANT_PROMPT.format(instruction=instruction, skeleton=skeleton)
+                prompt = VARIANT_PROMPT.format(instruction=instruction, skeleton=skeleton, scope=scope)
 
                 def on_text(t):
                     job.text = t
 
                 reply = generate_text(prompt, model, src.parent, on_text=on_text)
                 job.text = reply
-                write_variant(base, src, instruction, parse_variant_reply(reply), n)
+                lines = restrict_levels(parse_variant_reply(reply), max_heading)
+                if not lines:
+                    raise RuntimeError("the model returned no headings at the requested level")
+                write_variant(base, src, instruction, lines, n, max_heading)
                 job.status = "done"
                 print(f"  variant: {job.name} from {src.name}", flush=True)
             except Exception as e:  # noqa: BLE001 — surfaced to the page via /variant/status
@@ -2347,7 +2397,7 @@ def serve(source: Path, port: int, open_browser: bool = True, model: str = "clau
                     req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                     src = resolve(req.get("doc"))
                     instruction = (req.get("instruction") or "").strip() or DEFAULT_VARIANT_INSTRUCTION
-                    job = start_variant(src, instruction)
+                    job = start_variant(src, instruction, req.get("level"))
                     self._send(200, json.dumps({"name": job.name}), "application/json")
                 except Exception as e:  # noqa: BLE001 — report any failure to the client
                     self._send(500, json.dumps({"error": str(e)}), "application/json")
