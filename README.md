@@ -168,7 +168,9 @@ back to the `.md` only when you press **Save**.
   `.tags.yaml`. In the **navigator** the family shares the
   outline's top level: this document's title row carries a suffix such as
   "(variant 1)", and the other members sit beside it as links (`?doc=<name>`)
-  labelled by their own titles. Serve mode only; needs
+  labelled by their own titles. The level switch is sized by the whole
+  family, so a variant that so far holds only headings still offers the
+  base's modes. Serve mode only; needs
   the same model backend as the quill; unsaved edits must be saved first.
 - **Nesting rules** — under a paragraph only its written text may nest (a
   childless non-heading bullet); drops never land inside a paragraph; and a

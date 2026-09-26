@@ -781,6 +781,7 @@ PAGE = """<!DOCTYPE html>
   const SOURCE = {source_js};
   const DOC = {doc_js};                        // the family member this page edits
   const DOCS = {docs_json};                    // the skeleton and its variants
+  const FAMILY = {family_json};                // the family's level shape: {{h, para}} or null
   const DEFAULT_INSTRUCTION = {default_instruction_js};
   const GENERATING = {generating_json};        // set on the page of a variant still being written
   const SCHEME = "{scheme}";
@@ -995,6 +996,10 @@ PAGE = """<!DOCTYPE html>
       if (!h) anyPara = true;
       rows.push({{ li, d, branch, h, body: isBody(li) }});
     }});
+    if (FAMILY) {{                             // a variant offers the same modes as its family
+      H = Math.max(H, FAMILY.h || 0);
+      anyPara = anyPara || !!FAMILY.para;
+    }}
     let max = 0;
     rows.forEach(r => {{
       r.lvl = r.h || (H ? (r.body ? H + 2 : H + 1) : r.d);
@@ -2362,6 +2367,18 @@ def doc_title(p: Path) -> str:
     return p.stem
 
 
+def family_levels(base: Path) -> dict:
+    """The level shape shared by the whole family, so a variant that holds
+    only headings still offers the base's modes (counts, paragraphs, text)."""
+    H, para = 0, False
+    for p in family_of(base):
+        body = strip_frontmatter(p.read_text(encoding="utf-8"))
+        H = max(H, deepest_heading(body))
+        if re.search(r"^\s*- (?!#)", body, re.M):
+            para = True
+    return {"h": H, "para": para}
+
+
 def family_docs(base: Path, current: str, jobs=None):
     """The skeleton and its variants as the navigator lists them: each by its
     own title, variants with a suffix — all on the outline's top level."""
@@ -2422,6 +2439,7 @@ def build_page(source: Path, editable: bool, base: Path = None, docs=None) -> st
         source=source.name,
         doc_js=json.dumps(source.name),
         docs_json=json.dumps(docs),
+        family_json=json.dumps(family_levels(base) if editable else None),
         generating_json="null",
         default_instruction=html.escape(DEFAULT_VARIANT_INSTRUCTION, quote=True),
         default_instruction_js=json.dumps(DEFAULT_VARIANT_INSTRUCTION),
@@ -2449,6 +2467,7 @@ def build_generating_page(job, base: Path, docs) -> str:
         source=job.name,
         doc_js=json.dumps(job.name),
         docs_json=json.dumps(docs),
+        family_json=json.dumps(family_levels(base)),
         generating_json=json.dumps({"name": job.name, "n": job.n, "src": job.src.name,
                                     "instruction": job.instruction}),
         source_js=json.dumps(job.name),
