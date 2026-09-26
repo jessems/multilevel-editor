@@ -247,31 +247,86 @@ PAGE = """<!DOCTYPE html>
   ::selection {{ background:var(--sel); }}
 
   /* ---------- header chrome (UI face, not reading face) ---------- */
-  header {{ position:sticky; top:0; z-index:2; background:var(--bg);
-           border-bottom:1px solid var(--line); padding:10px 56px 10px 24px;
-           display:flex; flex-wrap:wrap; gap:8px 12px; align-items:baseline;
-           font:13px/1.4 var(--sans); }}
-  header h1 {{ font:600 15px/1.4 var(--serif); margin:0; letter-spacing:-0.005em; }}
-  header .src {{ color:var(--mut); font-size:12.5px; }}
-  header .hint {{ color:var(--mut); font-size:12.5px; font-style:italic; }}
-  header button {{ font:500 12.5px/1 var(--sans); padding:6px 11px; cursor:pointer;
-                  color:var(--ink); background:var(--btn); border:1px solid var(--line);
-                  border-radius:6px; }}
-  header button:hover {{ border-color:var(--mut); }}
-  header button:focus-visible {{ outline:2px solid var(--acc); outline-offset:2px; }}
-  #saveBtn {{ margin-left:auto; padding:6px 16px; font-weight:600; }}
-  #saveBtn:disabled {{ opacity:.45; cursor:default; }}
-  #saveBtn.dirty {{ background:var(--acc); color:var(--bg); border-color:var(--acc); }}
-  body.readonly #saveBtn, body.readonly #mdBtn {{ display:none; }}
+  /* one slim rail in three columns: the document on the left, the level switch
+     in the true page centre (equal 1fr sides), the actions on the right. The
+     status message drops out of the rail as a toast; the usage notes live in
+     a key card behind the ? button. */
+  header {{ position:sticky; top:0; z-index:2; box-sizing:border-box;
+           display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);
+           align-items:center; gap:12px; padding:8px 14px; min-height:54px;
+           background:color-mix(in srgb, var(--bg) 86%, transparent);
+           -webkit-backdrop-filter:blur(12px) saturate(1.3); backdrop-filter:blur(12px) saturate(1.3);
+           border-bottom:1px solid var(--line); font:13px/1.4 var(--sans); }}
+  .hl {{ grid-column:1; display:flex; align-items:center; gap:10px; min-width:0; }}
+  .hr {{ grid-column:3; justify-self:end; display:flex; align-items:center; gap:4px; }}
+  .doc {{ display:flex; flex-direction:column; min-width:0; line-height:1.2; }}
+  header h1 {{ font:600 15px/1.25 var(--serif); margin:0; letter-spacing:-0.005em;
+              white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+  header .src {{ font:500 10.5px/1.3 var(--mono); color:var(--mut); letter-spacing:.02em;
+                white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+  header button {{ font:500 12.5px/1 var(--sans); padding:0 10px; height:30px; cursor:pointer;
+                  color:var(--ink); background:transparent; border:1px solid transparent;
+                  border-radius:7px; transition:background .12s, border-color .12s, color .12s; }}
+  header button:hover {{ background:var(--hover); }}
+  header button:focus-visible {{ outline:2px solid var(--acc); outline-offset:1px; }}
+  .hr .sep {{ width:1px; height:18px; background:var(--line); margin:0 6px; }}
+  #saveBtn {{ display:inline-flex; align-items:center; gap:8px; padding:0 12px; font-weight:600;
+             border-color:var(--line); background:var(--btn); }}
+  #saveBtn kbd {{ font:500 10.5px/1 var(--sans); color:var(--mut); letter-spacing:.04em; }}
+  #saveBtn:disabled {{ opacity:.5; cursor:default; background:transparent; }}
+  #saveBtn:disabled kbd {{ display:none; }}
+  #saveBtn.dirty {{ background:var(--acc); color:var(--bg); border-color:var(--acc);
+                   box-shadow:0 1px 0 rgba(0,0,0,.08), 0 4px 12px -6px var(--acc); }}
+  #saveBtn.dirty kbd {{ color:inherit; opacity:.75; }}
+  #saveBtn.dirty::before {{ content:''; width:6px; height:6px; border-radius:50%;
+                           background:currentColor; animation:pulse 1.8s ease-in-out infinite; }}
+  @keyframes pulse {{ 50% {{ opacity:.35; }} }}
+  body.readonly #saveBtn, body.readonly #mdBtn, body.readonly #helpBtn,
+  body.readonly .hr .sep {{ display:none; }}
+  /* icon buttons: a masked glyph in currentColor */
+  .ibtn {{ width:30px; padding:0 !important; color:var(--mut) !important; }}
+  .ibtn:hover {{ color:var(--ink) !important; }}
+  .ibtn::before {{ content:''; display:block; width:16px; height:16px; margin:auto;
+                  background:currentColor; -webkit-mask:var(--icon) center/contain no-repeat;
+                  mask:var(--icon) center/contain no-repeat; }}
+  #mdBtn {{ color:var(--mut); }}
+  #mdBtn:hover, body.mdmode #mdBtn {{ color:var(--ink); }}
+  body.mdmode #mdBtn {{ background:var(--chip); }}
+  #helpBtn {{ --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01'/%3E%3C/svg%3E"); }}
+  #helpBtn[aria-expanded="true"] {{ color:var(--acc) !important; background:var(--hover); }}
+  /* the key card */
+  #help {{ position:absolute; top:calc(100% + 8px); right:14px; width:320px; max-width:calc(100vw - 28px);
+          box-sizing:border-box; padding:14px 16px 12px; background:var(--bg); color:var(--ink);
+          border:1px solid var(--line); border-radius:10px; z-index:7;
+          box-shadow:0 12px 32px -12px rgba(0,0,0,.28), 0 2px 6px -2px rgba(0,0,0,.08);
+          transform-origin:top right; animation:cardin .14s ease-out; }}
+  #help[hidden] {{ display:none; }}
+  @keyframes cardin {{ from {{ opacity:0; transform:translateY(-4px) scale(.98); }} }}
+  #help h2 {{ font:600 10.5px/1 var(--sans); letter-spacing:.1em; text-transform:uppercase;
+             color:var(--mut); margin:0 0 10px; }}
+  #help ul {{ list-style:none; margin:0; padding:0; border-left:none; font:13px/1.45 var(--sans); }}
+  #help li {{ padding:5px 0; border-top:1px dashed var(--line); }}
+  #help li:first-child {{ border-top:none; }}
+  #help kbd, #help b {{ font:600 11px/1 var(--sans); padding:3px 6px; border-radius:4px;
+                       background:var(--chip); border-bottom:1px solid var(--line);
+                       font-variant-numeric:tabular-nums; }}
+  #help b {{ font-weight:600; background:none; border:none; padding:0; }}
+  /* the status message drops out of the rail as a toast, centred under the switch */
+  #status {{ position:absolute; top:calc(100% + 8px); left:50%; transform:translateX(-50%);
+            font:500 12.5px/1 var(--sans); color:var(--ink); background:var(--bg);
+            border:1px solid var(--line); border-radius:999px; padding:7px 14px;
+            box-shadow:0 8px 20px -10px rgba(0,0,0,.3); white-space:nowrap; z-index:4;
+            pointer-events:none; animation:toast .18s ease-out; }}
+  #status:empty {{ display:none; }}
+  @keyframes toast {{ from {{ opacity:0; transform:translate(-50%, -6px); }} }}
+  #status.saved {{ color:var(--ok); border-color:color-mix(in srgb, var(--ok) 45%, var(--line)); }}
+  #status.error {{ color:var(--err); border-color:color-mix(in srgb, var(--err) 45%, var(--line)); }}
   /* level switch — one mode per depth the outline uses: N shows the top N levels.
-     Its own row at the bottom of the header, centred on the page: the header
-     pads 56px right for the pinned cog vs 24px left, so the row extends 32px
-     into that padding to make its centre the page centre. */
-  .levels-row {{ order:99; flex:0 0 calc(100% + 32px); display:flex; justify-content:center;
-                 margin:2px -32px 0 0; }}
-  .levels-row:has(#levels:empty), body.mdmode .levels-row {{ display:none; }}
-  #levels {{ display:inline-flex; align-items:stretch; border:1px solid var(--line);
-             border-radius:6px; overflow:hidden; }}
+     The centre column of the header grid, so it sits on the page centre. */
+  .levels-row {{ grid-column:2; display:flex; justify-content:center; }}
+  .levels-row:has(#levels:empty), body.mdmode .levels-row {{ visibility:hidden; }}
+  #levels {{ display:inline-flex; align-items:stretch; gap:2px; padding:2px;
+             background:var(--hover); border:1px solid var(--line); border-radius:9px; }}
   li.lvhide {{ display:none !important; }}                 /* below the chosen level */
   li.lvhide[data-pending-new], li.lvhide:has(> .row .txt[contenteditable="true"]) {{
     display:list-item !important; }}                       /* …but never while being edited */
@@ -279,15 +334,13 @@ PAGE = """<!DOCTYPE html>
   li.lvcut > .row .caret::before {{ width:5px; height:5px; border:0; border-radius:50%;
     background:var(--mut); opacity:.75; transform:none; position:relative; top:-1px; }}
   li.lvcut > .row.numbered .caret::before {{ display:none; }}
-  #levels button {{ border:none; border-radius:0; padding:5px 10px; min-width:30px; }}
-  #levels button svg {{ display:block; width:20px; height:20px; margin:0 auto; }}
-  #levels button + button {{ border-left:1px solid var(--line); }}
-  #levels button:hover {{ background:var(--hover); }}
-  #levels button.on {{ background:var(--acc); color:var(--bg); }}
+  #levels button {{ border:none; border-radius:7px; height:28px; padding:0 9px; min-width:34px;
+                   color:var(--mut); }}
+  #levels button svg {{ display:block; width:18px; height:18px; margin:0 auto; }}
+  #levels button:hover {{ background:var(--bg); color:var(--ink); }}
+  #levels button.on {{ background:var(--acc); color:var(--bg);
+                      box-shadow:0 1px 2px rgba(0,0,0,.15), inset 0 1px 0 rgba(255,255,255,.12); }}
   #levels button:focus-visible {{ outline-offset:-2px; }}
-  #status {{ font:12.5px var(--sans); color:var(--mut); min-width:60px; }}
-  #status.saved {{ color:var(--ok); }}
-  #status.error {{ color:var(--err); }}
 
   /* ---------- reading column ---------- */
   main {{ max-width:780px; margin:0 auto; padding:28px 24px 140px; }}
@@ -406,14 +459,7 @@ PAGE = """<!DOCTYPE html>
   body.readonly .creac.empty {{ display:none; }}
 
   /* ---------- settings sidebar (opened from the top-right cog) ---------- */
-  /* pinned to the header corner — flex-wrap must never carry it to the left */
-  #menuBtn {{ width:30px; padding:5px 0; position:absolute; top:9px; right:14px; }}
-  #menuBtn::before {{ content:''; display:inline-block; width:15px; height:15px;
-    vertical-align:middle; background:currentColor;
-    -webkit-mask:var(--icon) center/contain no-repeat;
-    mask:var(--icon) center/contain no-repeat;
-    --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3Cpath d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z'/%3E%3C/svg%3E"); }}
-  #menuBtn:hover::before {{ background:var(--acc); }}
+  #menuBtn {{ --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3Cpath d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z'/%3E%3C/svg%3E"); }}
   body.readonly #menuBtn {{ display:none; }}
   #sidebar {{ position:fixed; top:0; right:0; bottom:0; width:300px; z-index:6;
              background:var(--bg); border-left:1px solid var(--line);
@@ -531,13 +577,8 @@ PAGE = """<!DOCTYPE html>
 
   /* ---------- navigator (left sidebar): the outline's levels as a descending tree ---------- */
   :root {{ --navw:264px; --hdr-h:52px; }}
-  #navBtn {{ width:30px; padding:5px 0; align-self:center; }}
-  #navBtn::before {{ content:''; display:inline-block; width:15px; height:15px;
-    vertical-align:middle; background:currentColor;
-    -webkit-mask:var(--icon) center/contain no-repeat;
-    mask:var(--icon) center/contain no-repeat;
-    --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Cpath d='M9 3v18'/%3E%3C/svg%3E"); }}
-  #navBtn:hover::before, body.nav-open #navBtn::before {{ background:var(--acc); }}
+  #navBtn {{ --icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Cpath d='M9 3v18'/%3E%3C/svg%3E"); }}
+  body.nav-open #navBtn {{ color:var(--acc) !important; }}
   #nav {{ position:fixed; left:0; top:var(--hdr-h); bottom:0; width:var(--navw); z-index:1;
          display:none; box-sizing:border-box; overflow-y:auto; padding:14px 8px 40px 10px;
          background:var(--bg); border-right:1px solid var(--line); font:13px/1.35 var(--sans); }}
@@ -577,9 +618,11 @@ PAGE = """<!DOCTYPE html>
 
   @media (max-width: 640px) {{
     body {{ font-size:16px; }}
-    header {{ padding:8px 14px; }}
-    header .hint {{ display:none; }}
-    .levels-row {{ flex-basis:100%; margin-right:0; }}
+    header {{ grid-template-columns:minmax(0,1fr) auto; row-gap:6px; padding:8px 10px; }}
+    .hr {{ grid-column:2; }}
+    .levels-row {{ grid-column:1 / -1; grid-row:2; }}
+    .levels-row:has(#levels:empty), body.mdmode .levels-row {{ display:none; }}
+    #saveBtn kbd, .hr .sep {{ display:none; }}
     main {{ padding:18px 14px 100px; }}
     :root {{ --indent:18px; }}
     .h1 {{ font-size:23px; }}
@@ -589,15 +632,20 @@ PAGE = """<!DOCTYPE html>
 </head>
 <body class="{bodycls}">
 <header>
-  <button id="navBtn" aria-label="navigator" title="navigator" aria-controls="nav" aria-expanded="false"></button>
-  <h1>{title}</h1>
-  <span class="src">{source}</span>
-  <button id="mdBtn">Markdown</button>
-  <span class="hint">{hint}</span>
-  <span id="status"></span>
-  <button id="saveBtn" disabled>Save</button>
-  <button id="menuBtn" aria-label="settings" title="settings"></button>
+  <div class="hl">
+    <button id="navBtn" class="ibtn" aria-label="navigator" title="navigator" aria-controls="nav" aria-expanded="false"></button>
+    <div class="doc"><h1 title="{title}">{title}</h1><span class="src" title="{source}">{source}</span></div>
+  </div>
   <div class="levels-row"><span id="levels" role="group" aria-label="visible levels" title="visible levels"></span></div>
+  <div class="hr">
+    <button id="mdBtn" title="edit the raw markdown">Markdown</button>
+    <button id="helpBtn" class="ibtn" aria-label="how to edit" title="how to edit" aria-controls="help" aria-expanded="false"></button>
+    <span class="sep"></span>
+    <button id="saveBtn" disabled title="write the skeleton and the draft">Save<kbd>⌘S</kbd></button>
+    <button id="menuBtn" class="ibtn" aria-label="settings" title="settings"></button>
+  </div>
+  <span id="status" role="status" aria-live="polite"></span>
+  <div id="help" hidden data-hint="{hint}"><h2>How to edit</h2><ul></ul></div>
 </header>
 <aside id="sidebar" aria-label="settings">
   <div class="sb-head"><h2>Settings</h2><button id="sbClose" aria-label="close">×</button></div>
@@ -632,6 +680,20 @@ PAGE = """<!DOCTYPE html>
   const mdBtn = document.getElementById('mdBtn');
   const status = document.getElementById('status');
   const saveBtn = document.getElementById('saveBtn');
+  // ---- key card: the usage notes, one per line, keys set as <kbd> ----
+  {{
+    const help = document.getElementById('help'), helpBtn = document.getElementById('helpBtn');
+    const esc = t => t.replace(/[&<>]/g, c => ({{ '&':'&amp;', '<':'&lt;', '>':'&gt;' }})[c]);
+    help.querySelector('ul').innerHTML = help.dataset.hint.split(' · ').filter(Boolean)
+      .map(t => '<li>' + esc(t).replace(/⌘[A-Z]|Enter|Shift\+Tab|\bTab\b/g, k => '<kbd>' + k + '</kbd>') + '</li>')
+      .join('').replace(/\((<kbd>[^<]*<\/kbd>)\)/g, '$1');
+    const setHelp = open => {{ help.hidden = !open; helpBtn.setAttribute('aria-expanded', String(open)); }};
+    helpBtn.addEventListener('click', () => setHelp(help.hidden));
+    document.addEventListener('click', e => {{
+      if (!help.hidden && !e.target.closest('#help') && !e.target.closest('#helpBtn')) setHelp(false);
+    }});
+    document.addEventListener('keydown', e => {{ if (e.key === 'Escape' && !help.hidden) setHelp(false); }});
+  }}
 
   // ---- level switch: one mode per heading level, then paragraphs, then text ----
   // A bullet's level is its heading level (#, ##, ### → 1, 2, 3); a

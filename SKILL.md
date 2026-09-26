@@ -91,7 +91,7 @@ warning. Save serializes the whole outline from the page and rewrites the
   the text on wide screens (remembered), an overlay under 900px. Works in
   the static export too.
 - **Collapse/expand** via the caret on branch bullets; the **level switch**
-  centred at the bottom of the header has one icon button per heading level
+  centred in the header has one icon button per heading level
   (n bulleted, stepped-in bars), then
   the paragraph level (¶), then the written-text level (prose lines) (`2` = `#`/`##` headings,
   `3` = plus `###`, `4` = paragraphs, `5` = fully written paragraphs — the
