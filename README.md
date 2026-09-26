@@ -25,11 +25,14 @@ back to the `.md` only when you press **Save**.
 
 - **Collapsible tree** — carets on branch bullets, plus a **level switch**
   centred at the bottom of the header with one mode per **heading level**
-  the outline uses, plus one for the paragraphs: `2` shows `#` and `##`
-  headings, `3` adds the `###` headings, and the highest number is the
-  paragraph level, which shows everything. Every non-heading bullet counts
-  as a paragraph wherever it is nested, so a heading-only view never mixes
-  in paragraphs (an outline with no headings falls back to nesting depth).
+  the outline uses, then one for the paragraphs, then one for the written
+  text: `2` shows `#` and `##` headings, `3` adds the `###` headings, `4`
+  the paragraphs (topic sentences), and the highest number the fully
+  written paragraphs — the text nested under each paragraph bullet. A
+  non-heading bullet under a heading is a paragraph, a non-heading bullet
+  under a paragraph is its written text, wherever they sit in the tree, so
+  a heading-only view never mixes in paragraphs (an outline with no
+  headings falls back to nesting depth).
   The `1` mode is omitted when a lone title is all that lives at level 1.
   Bullets below the chosen level are **removed from view**, not merely
   collapsed — a branch whose children are all hidden shows a leaf dot, not a
@@ -99,10 +102,17 @@ back to the `.md` only when you press **Save**.
   first save. Badge hues follow the letter's position in the scheme; a letter
   not in the active scheme renders muted, and clicking it retags into the
   current scheme.
-- **Nesting rules** — nothing can be nested under a non-heading bullet via
-  the tree view (paragraphs are the deepest level an operation may create),
-  and a heading can only be moved under a heading of a shallower level, so a
-  `#` never lands beneath a `##` and a `##` never beneath another `##`.
+- **Written paragraphs** — the text of a paragraph lives as a child bullet
+  of its topic sentence (the paragraph reads as a semibold heading over it).
+  Written text belongs to its paragraph: it has no drag handle, no dot and
+  no number, moves only with its paragraph, and nothing nests under it. Make
+  it by indenting a bullet under the paragraph above (Tab) or in the
+  markdown view; several written bullets under one paragraph are fine (e.g.
+  lettered sub-items).
+- **Nesting rules** — under a paragraph only its written text may nest (a
+  childless non-heading bullet); drops never land inside a paragraph; and a
+  heading can only be moved under a heading of a shallower level, so a `#`
+  never lands beneath a `##` and a `##` never beneath another `##`.
 - **Markdown view** — a header toggle swaps the tree for a raw-markdown
   textarea of the current staged state: bulk-edit, add, delete, re-indent
   bullets, then toggle back or Save directly.

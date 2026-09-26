@@ -443,6 +443,12 @@ PAGE = """<!DOCTYPE html>
   .grip:hover {{ background:var(--chip); }}
   .grip:active {{ cursor:grabbing; }}
   body.readonly .grip {{ display:none; }}
+  /* written text (the level under a paragraph): belongs to its paragraph, so
+     no handle of its own and no dot; the paragraph it belongs to reads as a
+     heading over it */
+  li.pbody > .row .grip {{ display:none; }}
+  li.pbody > .row > .main > .dot {{ visibility:hidden; }}
+  li.written > .row > .main > .txt {{ font-weight:600; }}
   li.dragging {{ opacity:.35; }}
   .row.drop-before > .main {{ box-shadow:0 -2px 0 var(--acc); }}
   .row.drop-after > .main {{ box-shadow:0 2px 0 var(--acc); }}
@@ -516,10 +522,12 @@ PAGE = """<!DOCTYPE html>
   const status = document.getElementById('status');
   const saveBtn = document.getElementById('saveBtn');
 
-  // ---- level switch: one mode per heading level, plus the paragraph level ----
-  // A bullet's level is its heading level (#, ##, ### → 1, 2, 3); every
-  // non-heading bullet sits at the PARAGRAPH level, one below the deepest
-  // heading used, wherever it is nested. (An outline with no headings at all
+  // ---- level switch: one mode per heading level, then paragraphs, then text ----
+  // A bullet's level is its heading level (#, ##, ### → 1, 2, 3); a
+  // non-heading bullet under a heading is a PARAGRAPH (one level below the
+  // deepest heading used) and a non-heading bullet under a paragraph is that
+  // paragraph's WRITTEN TEXT, one level further — the last mode, offered
+  // whenever the outline has paragraphs. (An outline with no headings at all
   // falls back to nesting depth.) Mode N shows the bullets of level ≤ N and
   // REMOVES the rest from view — a branch whose children are all hidden
   // renders with a leaf dot instead of a caret — independent of the carets'
@@ -544,19 +552,19 @@ PAGE = """<!DOCTYPE html>
   }}
   function levelRows() {{                      // [{{li, branch, lvl}}], max level, deepest heading
     const rows = [];
-    let H = 0;
+    let H = 0, anyPara = false;
     eachRow((li, d, branch) => {{
-      const raw = li.querySelector(':scope > .row .txt').dataset.raw;
-      const m = /^(#{{1,6}})\\s/.exec(raw);
-      const h = m ? m[1].length : 0;
+      const h = headingLevel(li);
       if (h > H) H = h;
-      rows.push({{ li, d, branch, h }});
+      if (!h) anyPara = true;
+      rows.push({{ li, d, branch, h, body: isBody(li) }});
     }});
     let max = 0;
     rows.forEach(r => {{
-      r.lvl = r.h || (H ? H + 1 : r.d);
+      r.lvl = r.h || (H ? (r.body ? H + 2 : H + 1) : r.d);
       if (r.lvl > max) max = r.lvl;
     }});
+    if (H && anyPara) max = Math.max(max, H + 2);   // the written-text level is always on offer
     return {{ rows, max, H }};
   }}
   const minLevel = rows => rows.filter(r => r.lvl <= 1).length === 1 ? 2 : 1;
@@ -581,8 +589,9 @@ PAGE = """<!DOCTYPE html>
       for (let n = min; n <= max; n++) {{
         const b = document.createElement('button');
         b.type = 'button'; b.textContent = n; b.dataset.level = n;
-        b.title = n === max ? (H ? 'show everything, paragraphs included' : 'show all levels')
-                : H ? 'show headings down to level ' + n : 'show the top ' + n + ' levels';
+        b.title = !H ? (n === max ? 'show all levels' : 'show the top ' + n + ' levels')
+                : n <= H ? 'show headings down to level ' + n
+                : n === H + 1 ? 'show the paragraphs' : 'show the fully written paragraphs';
         levelBar.appendChild(b);
       }}
     }}
@@ -752,6 +761,7 @@ PAGE = """<!DOCTYPE html>
         if (span) {{
           const raw = span.dataset.raw;
           isHeading = raw.startsWith('#');
+          li.classList.toggle('pbody', !isHeading && !parentHeading);   // written text
           const prev = span.previousElementSibling;
           let chip = prev && prev.classList.contains('pnum') ? prev : null;
           const numbered = parentHeading && !isHeading && !raw.startsWith('[');
@@ -792,29 +802,46 @@ PAGE = """<!DOCTYPE html>
         if (sub) walk(sub, isHeading);
       }});
     }})(tree, true);
+    tree.querySelectorAll('li').forEach(li =>
+      li.classList.toggle('written', !!li.querySelector(':scope > ul > li.pbody')));
     syncLevels();
   }}
 
   // nesting rules — returns an error message, or null when `li` may become a
   // child of `parentLi` (null = root level):
-  //   * nothing may nest under a non-heading bullet — paragraphs are the
-  //     deepest level an operation may create
+  //   * under a paragraph (non-heading bullet) only its written text may
+  //     nest: a childless non-heading bullet; nothing nests under that
   //   * a heading may only nest under a heading of a shallower level
   //     (## under #, ### under ##, never # under ## or ## under ##)
-  const headingLevel = li => {{
+  // (function declarations: the level switch above uses them at load time)
+  function headingLevel(li) {{
     const span = li && li.querySelector(':scope > .row .txt');
     const m = span && /^(#{{1,6}})\\s/.exec(span.dataset.raw);
     return m ? m[1].length : 0;
-  }};
-  const parentLiOf = li => li.parentElement === tree ? null : li.parentElement.closest('li');
+  }}
+  function parentLiOf(li) {{ return li.parentElement === tree ? null : li.parentElement.closest('li'); }}
+  // a paragraph's written text: a non-heading bullet under a non-heading bullet
+  function isBody(li) {{
+    const p = parentLiOf(li);
+    return !!p && !headingLevel(li) && !headingLevel(p);
+  }}
   function nestError(li, parentLi) {{
     if (!parentLi) return null;
     const plvl = headingLevel(parentLi);
-    if (!plvl) return 'no indentation beyond paragraph level';
     const lvl = headingLevel(li);
+    if (!plvl) {{
+      if (isBody(parentLi)) return 'nothing nests under a written paragraph';
+      if (lvl) return 'a heading cannot go under a paragraph';
+      if (li.querySelector(':scope > ul')) return 'a bullet with children cannot become written text';
+      return null;
+    }}
     if (lvl && lvl <= plvl) return 'a heading can only go under a shallower heading';
     return null;
   }}
+  // drops never land inside a paragraph: written text is made by indenting
+  // (Tab) or in the markdown view, and moves only with its paragraph
+  const dropError = (li, parentLi) =>
+    parentLi && !headingLevel(parentLi) ? 'no drops inside a paragraph' : nestError(li, parentLi);
 
   // ---- branch/leaf conversion helpers (for indent/outdent) ----
   function toBranch(li) {{
@@ -1002,7 +1029,7 @@ PAGE = """<!DOCTYPE html>
       }}
       renumberChips();                              // heading-ness may have changed
       if (liEl && liEl.classList.contains('lvhide'))
-        flash('staged, but hidden at this level — the last level shows paragraphs', 'error');
+        flash('staged, but hidden at this level — pick a deeper level to see it', 'error');
       markDirty();
     }};
     const indentOutdent = out => {{
@@ -1065,7 +1092,7 @@ PAGE = """<!DOCTYPE html>
   let insertTarget = null;   // {{ li, where: 'before'|'after' }}
   function hideInsert() {{ insertHint.classList.remove('show'); insertTarget = null; }}
   const newLeafNestError = parentLi =>
-    !parentLi || headingLevel(parentLi) ? null : 'no indentation beyond paragraph level';
+    parentLi && isBody(parentLi) ? 'nothing nests under a written paragraph' : null;
   tree.addEventListener('mousemove', e => {{
     if (!EDITABLE || dragLi || e.buttons) {{ hideInsert(); return; }}   // no hint mid-press/drag
     // editing a bullet does NOT suppress the hint: the plus stays reachable, and
@@ -1159,7 +1186,7 @@ PAGE = """<!DOCTYPE html>
     .forEach(r => r.classList.remove('drop-before', 'drop-after'));
   tree.addEventListener('dragstart', e => {{
     const g = e.target.closest('.grip');
-    if (!g || !EDITABLE) {{ e.preventDefault(); return; }}
+    if (!g || !EDITABLE || isBody(g.closest('li'))) {{ e.preventDefault(); return; }}
     hideInsert();   // a visible insert hint would sit over the drop zone and swallow dragover
     dragLi = g.closest('li');
     dragLi.classList.add('dragging');
@@ -1194,7 +1221,7 @@ PAGE = """<!DOCTYPE html>
     if (!row) {{ clearMarks(); return; }}
     const li = row.closest('li');
     if (li === dragLi || dragLi.contains(li)) {{ clearMarks(); return; }}
-    if (nestError(dragLi, parentLiOf(li))) {{ clearMarks(); return; }}   // breaks nesting rules
+    if (dropError(dragLi, parentLiOf(li))) {{ clearMarks(); return; }}   // breaks nesting rules
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     clearMarks();
@@ -1207,7 +1234,7 @@ PAGE = """<!DOCTYPE html>
     if (!row) return;
     const li = row.closest('li');
     if (li === dragLi || dragLi.contains(li)) return;
-    const err = nestError(dragLi, parentLiOf(li));
+    const err = dropError(dragLi, parentLiOf(li));
     if (err) {{ flash(err, 'error'); return; }}
     e.preventDefault();
     const r = row.getBoundingClientRect();

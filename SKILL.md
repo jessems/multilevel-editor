@@ -38,10 +38,12 @@ warning. Save serializes the whole outline from the page and rewrites the
   indents** the bullet (last child of its previous sibling, subtree included)
   and **Shift+Tab outdents** it (parent's next sibling); both keep edit mode
   and caret position, and flash a notice when not possible.
-- **Depth cap — nothing nests under a paragraph.** Non-heading bullets are the
-  deepest level Tab or a drag may create; indenting under a non-heading bullet
-  is refused and such drop positions don't accept the drag. The markdown view
-  is the unrestricted escape hatch.
+- **Written paragraphs — the level under a paragraph.** A non-heading bullet
+  nested under a paragraph is that paragraph's written text: no grip, dot or
+  number of its own, it moves only with its paragraph (drops never land
+  inside a paragraph), and nothing nests under it. Create it with Tab under
+  the paragraph above, or in the markdown view. The paragraph over it
+  renders semibold.
 - **Paragraph numbers are computed by the UI, never stored in the file.** A
   bullet gets a small sequential number chip (replacing its dot) when it sits
   directly under a heading bullet and is neither a heading (`#…`) nor a
@@ -58,10 +60,10 @@ warning. Save serializes the whole outline from the page and rewrites the
   (the tree rebuilds, chips recompute) or Save directly. Only the outline body
   is shown; frontmatter stays untouched.
 - **Collapse/expand** via the caret on branch bullets; the **level switch**
-  centred at the bottom of the header has one mode per heading level plus
-  the paragraph level (`2` = `#`/`##` headings, `3` = plus `###`, highest =
-  paragraphs, i.e. everything; `1` omitted for a lone title). Every
-  non-heading bullet is paragraph level wherever it nests; bullets below the
+  centred at the bottom of the header has one mode per heading level, then
+  the paragraph level, then the written-text level (`2` = `#`/`##` headings,
+  `3` = plus `###`, `4` = paragraphs, `5` = fully written paragraphs — the
+  bullets nested under each paragraph; `1` omitted for a lone title). Bullets below the
   chosen level are removed from view, not collapsed (branches with all
   children hidden show a dot; a bullet being edited always shows), and the
   choice is remembered per file across reloads. Text selection inside a
