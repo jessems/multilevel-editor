@@ -166,9 +166,9 @@ back to the `.md` only when you press **Save**.
   it derives from and the instruction used. The original is untouched.
   Each variant is a skeleton in its own right, with its own `.draft.md` and
   `.tags.yaml`. In the **navigator** the family shares the
-  outline's top level: this document's title row carries a suffix such as
-  "(variant 1)", and the other members sit beside it as links (`?doc=<name>`)
-  labelled by their own titles. The level switch is sized by the whole
+  outline's top level: every member is drawn as a full tree that follows the
+  level switch, the open one tinted, variants suffixed "(variant 1)".
+  Clicking a node in another member opens it there (`?doc=<name>&at=<n>`). The level switch is sized by the whole
   family, so a variant that so far holds only headings still offers the
   base's modes. Serve mode only; needs
   the same model backend as the quill; unsaved edits must be saved first.

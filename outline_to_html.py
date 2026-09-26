@@ -683,9 +683,9 @@ PAGE = """<!DOCTYPE html>
             text-align:left; padding:3px 4px; font:inherit; color:var(--ink);
             white-space:nowrap; overflow:hidden; text-overflow:ellipsis; border-radius:4px; }}
   .nlabel.nh1, .nlabel.nh2 {{ font-weight:600; }}
-  /* the skeleton's variants share the outline's top level: other members are
-     links beside this document's title row; a suffix names the variant */
-  #nav li.ndoc > .nrow > a.nlabel {{ text-decoration:none; display:block; }}
+  /* the skeleton's variants share the outline's top level, each drawn as a
+     full tree; the open document's title row is tinted, a suffix names a variant */
+  #nav > ul > li.here > .nrow {{ background:var(--chip); }}
   .nsuffix {{ color:var(--mut); font-weight:500; }}
   .nlabel.npara {{ color:var(--mut); }}
   .ncaret:focus-visible, .nlabel:focus-visible {{ outline:2px solid var(--acc); outline-offset:-2px; }}
@@ -843,86 +843,101 @@ PAGE = """<!DOCTYPE html>
   const navBtn = document.getElementById('navBtn');
   const navOverride = new Map();               // outline li -> open? (manual caret toggles)
   let navCurrent = null;                       // outline li last jumped to
+  // every member of the family is drawn as a full tree; the open document's
+  // nodes point at outline rows, the others' at ?doc=<name>&at=<index>
+  function navNodesFromBullets(bullets, H) {{
+    const root = {{ indent: -1, kids: [] }};
+    const stack = [root];
+    let index = 0, num = 0;
+    bullets.forEach(b => {{
+      while (stack[stack.length - 1].indent >= b.indent) stack.pop();
+      const parent = stack[stack.length - 1];
+      const m = /^(#{{1,6}})\\s+/.exec(b.raw);
+      const h = m ? m[1].length : 0;
+      const parentHeading = parent === root || parent.h > 0;
+      const body = !h && !parentHeading;                       // written text: never listed
+      const node = {{ indent: b.indent, h, body, kids: [], index: index++,
+                     text: b.raw.replace(/^#{{1,6}}\\s+/, '').replace(/[*`]/g, ''),
+                     num: !h && parentHeading && !b.raw.startsWith('[') ? ++num : 0 }};
+      node.lvl = h || (H ? (body ? H + 2 : H + 1) : stack.length);
+      if (!body) parent.kids.push(node);
+      stack.push(node);
+    }});
+    return root.kids;
+  }}
+  function navNodesFromRows(rows, H) {{
+    const info = new Map(rows.map(r => [r.li, r]));
+    let index = 0;
+    const walk = ul => ul ? [...ul.children].flatMap(li => {{
+      const r = info.get(li);
+      if (!r) return [];
+      const i = index++;
+      if (H && r.body) return [];
+      const span = li.querySelector(':scope > .row .txt');
+      const numEl = li.querySelector(':scope > .row > .main > .pnum');
+      return [{{ li, h: r.h, lvl: r.lvl, index: i, kids: walk(li.querySelector(':scope > ul')),
+                text: span.dataset.raw.replace(/^#{{1,6}}\\s+/, '').replace(/[*`]/g, ''),
+                num: numEl ? numEl.textContent : 0 }}];
+    }}) : [];
+    return walk(tree);
+  }}
   function renderNav(rows, max, H) {{
     const active = level && level < max ? level : max;
-    const info = new Map(rows.map(r => [r.li, r]));
-    const listed = li => {{ const r = info.get(li); return r && !(H && r.body) ? r : null; }};
-    const kidsOf = ul => ul ? [...ul.children].map(listed).filter(Boolean) : [];
-    function build(r) {{
+    function build(node, doc) {{
       const item = document.createElement('li');
-      item.navLi = r.li;
+      item.navLi = node.li || null; item.navDoc = doc.name; item.navAt = node.index;
+      const key = node.li || doc.name + ':' + node.index;
       const row = document.createElement('div');
       row.className = 'nrow';
-      const kids = kidsOf(r.li.querySelector(':scope > ul'));
-      const lead = document.createElement(kids.length ? 'button' : 'span');
-      if (kids.length) {{ lead.type = 'button'; lead.className = 'ncaret'; lead.setAttribute('aria-label', 'toggle'); }}
+      const lead = document.createElement(node.kids.length ? 'button' : 'span');
+      if (node.kids.length) {{ lead.type = 'button'; lead.className = 'ncaret'; lead.setAttribute('aria-label', 'toggle'); }}
       else lead.className = 'nspace';
       const label = document.createElement('button');
       label.type = 'button';
-      label.className = 'nlabel ' + (r.h ? 'nh' + r.h : H ? 'npara' : 'nitem');
-      const text = r.li.querySelector(':scope > .row .txt').dataset.raw
-                     .replace(/^#{{1,6}}\\s+/, '').replace(/[*`]/g, '');
-      const num = r.li.querySelector(':scope > .row > .main > .pnum');
-      if (num) {{
+      label.className = 'nlabel ' + (node.h ? 'nh' + node.h : H ? 'npara' : 'nitem');
+      if (node.num) {{
         const n = document.createElement('span');
-        n.className = 'nnum'; n.textContent = num.textContent;
+        n.className = 'nnum'; n.textContent = node.num;
         label.append(n);
       }}
-      label.append(text || '…');
-      label.title = text;
+      label.append(node.text || '…');
+      label.title = node.text;
       row.append(lead, label);
       item.append(row);
-      if (kids.length) {{
-        // the level opens a node onto its children at or above the level
-        // (paragraphs straight under a ## stay out of a heading view); a
-        // manual caret expand shows every child
-        const manual = navOverride.get(r.li);
+      if (node.kids.length) {{
+        const manual = navOverride.get(key);
         item.classList.toggle('open', manual !== undefined ? manual
-          : r.lvl < active && kids.some(k => k.lvl <= active));
+          : node.lvl < active && node.kids.some(k => k.lvl <= active));
         const ul = document.createElement('ul');
-        kids.forEach(k => {{
-          const it = build(k);
+        node.kids.forEach(k => {{
+          const it = build(k, doc);
           it.classList.toggle('deep', manual !== true && k.lvl > active);
           ul.append(it);
         }});
         item.append(ul);
       }}
-      item.classList.toggle('current', r.li === navCurrent);
+      item.classList.toggle('current', !!node.li && node.li === navCurrent);
       return item;
     }}
-    const top = nav.scrollTop;
-    // the family shares the outline's top level: this document's title row
-    // carries its suffix ("(variant 2)"), the other members sit beside it as
-    // links that load them (unsaved edits prompt on the way out)
-    const outline = kidsOf(tree).map(build);
-    const suffixed = (label, suffix) => {{
-      if (!suffix) return;
+    const suffixed = (item, suffix) => {{
+      if (!item || !suffix) return;
       const sfx = document.createElement('span');
       sfx.className = 'nsuffix'; sfx.textContent = ' ' + suffix;
-      label.append(sfx);
+      item.querySelector(':scope > .nrow > .nlabel').append(sfx);
     }};
+    const top = nav.scrollTop;
     const items = [];
-    DOCS.forEach(d => {{
-      if (d.current) {{
-        const first = outline[0] && outline[0].querySelector(':scope > .nrow > .nlabel');
-        if (first) {{ suffixed(first, d.suffix); first.title = d.name; }}
-        items.push(...outline);
-        return;
+    DOCS.forEach(doc => {{
+      const roots = doc.current ? navNodesFromRows(rows, H)
+                  : doc.pending ? [{{ text: doc.title, h: 1, lvl: 1, index: 0, kids: [], num: 0 }}]
+                  : navNodesFromBullets(doc.bullets || [], H);
+      const built = roots.map(n => build(n, doc));
+      if (built[0]) {{
+        suffixed(built[0], doc.suffix);
+        built[0].classList.toggle('here', !!doc.current);
+        built[0].querySelector(':scope > .nrow > .nlabel').title = doc.name;
       }}
-      const item = document.createElement('li');
-      item.className = 'ndoc';
-      const row = document.createElement('div');
-      row.className = 'nrow';
-      const space = document.createElement('span');
-      space.className = 'nspace';
-      const label = document.createElement('a');
-      label.className = 'nlabel nh1';
-      label.href = '?doc=' + encodeURIComponent(d.name);
-      label.textContent = d.title; label.title = d.name;
-      suffixed(label, d.suffix);
-      row.append(space, label);
-      item.append(row);
-      items.push(item);
+      items.push(...built);
     }});
     navTree.replaceChildren(...items);
     nav.scrollTop = top;
@@ -943,14 +958,24 @@ PAGE = """<!DOCTYPE html>
   }}
   navTree.addEventListener('click', e => {{
     const item = e.target.closest('li');
-    if (!item || item.classList.contains('ndoc')) return;   // file rows: links do the work
+    if (!item) return;
     if (e.target.closest('.ncaret')) {{
       const open = !item.classList.contains('open');
       item.classList.toggle('open', open);
-      navOverride.set(item.navLi, open);
+      navOverride.set(item.navLi || item.navDoc + ':' + item.navAt, open);
       if (open) item.querySelectorAll(':scope > ul > li.deep').forEach(k => k.classList.remove('deep'));
-    }} else if (e.target.closest('.nlabel')) revealBullet(item.navLi);
+    }} else if (e.target.closest('.nlabel')) {{
+      if (item.navLi) revealBullet(item.navLi);
+      else location.href = '?doc=' + encodeURIComponent(item.navDoc) + '&at=' + item.navAt;   // another member: open it there
+    }}
   }});
+  {{   // arrived from another member's tree: jump to the node that was clicked
+    const at = new URLSearchParams(location.search).get('at');
+    if (at !== null) {{
+      const li = [...tree.querySelectorAll('li')].filter(li => !li.classList.contains('pbody'))[+at];
+      if (li) setTimeout(() => revealBullet(li), 60);
+    }}
+  }}
   // open beside the text on wide screens (remembered), as an overlay on narrow ones
   const NAV_KEY = 'multilevel-editor.nav';
   const narrowNav = matchMedia('(max-width: 900px)');
@@ -2385,9 +2410,18 @@ def family_docs(base: Path, current: str, jobs=None):
     docs = []
     for p in family_of(base):
         m = VARIANT_RE.search(p.name)
+        bullets = []
+        if p.name != current:                 # the navigator draws the others' trees from this
+
+            def flat(nodes):
+                for n in nodes:
+                    bullets.append({"indent": n["indent"], "raw": split_tag(n["raw"])[0].strip()})
+                    flat(n["children"])
+
+            flat(parse_outline(p.read_text(encoding="utf-8")))
         docs.append({"name": p.name, "label": doc_label(p, base), "title": doc_title(p),
                      "suffix": f"(variant {m.group(1)})" if m else "",
-                     "current": p.name == current, "pending": False})
+                     "current": p.name == current, "pending": False, "bullets": bullets})
     names = {d["name"] for d in docs}
     for name, job in (jobs or {}).items():
         if name not in names and job.status != "done":
